@@ -1,7 +1,7 @@
 use lapin::{
   Result,
   message::{Delivery},
-  options::{BasicAckOptions},
+  options::{BasicAckOptions, BasicNackOptions},
 };
 use borsh::{BorshSerialize, BorshDeserialize};
 use amqp::{
@@ -24,13 +24,14 @@ async fn main() {
     "basic_consumer",
   ).await;
 
-  retry_consumer.consume(Box::new(move |delivery: Result<Delivery>| async move {
+  retry_consumer.consume(Box::new(move |delivery: Result<Delivery>, retry_count: i64| async move {
     if let Ok(delivery) = delivery {
+      println!("Retry count {:?}", retry_count);
       let msg = Message::try_from_slice(&delivery.data).unwrap();
       println!("{:?}", msg);
 
       delivery
-        .ack(BasicAckOptions::default())
+        .nack(BasicNackOptions::default())
         .await
         .expect("Failed to ack send_webhook_event message");
     }

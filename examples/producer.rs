@@ -17,10 +17,10 @@ async fn main() {
     "example_exchange",
     "example_queue",
     "example.send",
-    10_000, //  10 seconds
+    5_000, //  5 seconds
   ).await;
 
-  for i in 0..100 {
+  for i in 0..1 {
     let msg = Message { name: format!("Name {}", i), age: i };
     producer.publish(
       "example_exchange",

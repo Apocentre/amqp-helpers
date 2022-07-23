@@ -3,10 +3,12 @@ use std::{
 };
 use futures_lite::stream::StreamExt;
 use lapin::{
+  Result,
   Consumer,
   options::{
     BasicConsumeOptions,
   },
+  message::{Delivery},
   types::{FieldTable},
 };
 use crate::{
@@ -40,7 +42,35 @@ impl RetryConsumer {
 
   pub async fn consume<F: Future<Output = ()> + Send + 'static>(&mut self, handler: MessageHandler<F>) {
     while let Some(delivery) = self.consumer.next().await {
-      handler(delivery).await;
+      let retry_count = Self::get_retry_count(&delivery);
+      handler(delivery, retry_count).await;
     }
+  }
+
+  fn get_retry_count(delivery: &Result<Delivery>) -> i64 {
+    if let Ok(delivery) = delivery {
+      let headers = delivery.properties.headers();
+
+      if let Some(headers) = headers {
+        let x_death = headers.inner().get("x-death");
+
+        // TODO: THere are too many unwraps here which we don't know if they are safe enough
+        if let Some(x_death) = x_death {
+          return x_death
+          .as_array()
+          .unwrap()
+          .as_slice()[0]
+          .as_field_table()
+          .unwrap()
+          .inner()
+          .get("count")
+          .unwrap()
+          .as_long_long_int()
+          .unwrap_or(1)
+        }
+      }
+    }
+
+    1
   }
 }
