@@ -1,3 +1,6 @@
+use std::{
+	future::Future
+};
 use lapin::{
   Consumer,
   options::{
@@ -8,7 +11,7 @@ use lapin::{
 use crate::{
   core::{
     connection::Connection,
-    types::{DeliveryHandler, HandlerFn},
+    types::{DeliveryHandler},
   },
 };
 
@@ -34,7 +37,7 @@ impl RetryConsumer {
     Self {consumer}
   }
 
-  pub fn consume <F: HandlerFn>(&self, handler: DeliveryHandler<F>) {
+  pub fn consume <F: Future<Output = ()> + Send + 'static>(&self, handler: DeliveryHandler<F>) {
     self.consumer.set_delegate(handler);
   }
 }
