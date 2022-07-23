@@ -12,7 +12,10 @@ use lapin::{
   types::{FieldTable, ShortString},
 };
 use crate::{
-  core::connection::Connection,
+  core::{
+    connection::Connection,
+    types::{DeliveryHandler, HandlerFn},
+  },
 };
 
 static ANY_MESSAGE: &str = "#";
@@ -80,8 +83,8 @@ impl RetryConsumer {
     Self {consumer}
   }
 
-  pub fn consume() {
-    
+  pub fn consume <F: HandlerFn>(&self, handler: DeliveryHandler<F>) {
+    self.consumer.set_delegate(handler);
   }
 
   async fn create_exchange(
