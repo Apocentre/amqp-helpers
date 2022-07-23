@@ -2,10 +2,12 @@ use lapin::{
   Channel,
   ExchangeKind,
   Queue,
+  Consumer,
   options::{
     ExchangeDeclareOptions,
     QueueDeclareOptions,
     QueueBindOptions,
+    BasicConsumeOptions,
   },
   types::{FieldTable, ShortString},
 };
@@ -13,9 +15,11 @@ use crate::{
   core::connection::Connection,
 };
 
-pub struct RetryConsumer;
-
 static ANY_MESSAGE: &str = "#";
+
+pub struct RetryConsumer {
+  consumer: Consumer,
+}
 
 impl RetryConsumer {
   pub async fn new(
@@ -23,6 +27,7 @@ impl RetryConsumer {
     exchange_name: &str,
     queue_name: &str,
     binding_key: &str,
+    consumer_tag: &str,
     ttl: u64,
   ) -> Self {
     let connection = Connection::new(uri).await;
@@ -65,7 +70,14 @@ impl RetryConsumer {
     // finally, bind the wait queue to the retry DLX where messages that are rejected are sent back to the main queue
     Self::queue_bind(&channel, &retry_1_exchange_name, &wait_queue_name, ANY_MESSAGE).await;
     
-    Self {}
+    let consumer = channel.basic_consume(
+      queue_name,
+      consumer_tag,
+      BasicConsumeOptions::default(),
+      FieldTable::default(),
+    ).await.expect("cannot create consumer");
+
+    Self {consumer}
   }
 
   async fn create_exchange(
