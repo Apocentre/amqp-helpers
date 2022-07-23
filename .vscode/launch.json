@@ -1,0 +1,44 @@
+{
+  // Use IntelliSense to learn about possible attributes.
+  // Hover to view descriptions of existing attributes.
+  // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Producer",
+      "cargo": {
+        "args": [
+          "build",
+          "--example=producer",
+          "--package=amqp"
+        ],
+        "filter": {
+          "name": "producer",
+          "kind": "example"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Consumer",
+      "cargo": {
+        "args": [
+          "build",
+          "--example=consumer",
+          "--package=amqp"
+        ],
+        "filter": {
+          "name": "consumer",
+          "kind": "example"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}"
+    },
+  ]
+}

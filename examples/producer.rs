@@ -1,5 +1,3 @@
-use std::fmt::format;
-
 use tokio::time::{sleep, Duration};
 use borsh::{BorshSerialize, BorshDeserialize};
 use amqp::producer::retry_producer::RetryProducer;
@@ -12,7 +10,7 @@ pub struct Message {
 
 #[tokio::main]
 async fn main() {
-  let uri = "amqp://localhost:5672";
+  let uri = "amqp://user:password@localhost:5672";
 
   let producer = RetryProducer::new(
     uri,
@@ -26,6 +24,6 @@ async fn main() {
     let msg = Message { name: format!("Name {}", i), age: i };
     producer.publish("example_exchange", "example.send", &msg.try_to_vec().unwrap()).await;
     
-    sleep(Duration::from_secs(5)).await;
+    sleep(Duration::from_secs(2)).await;
   }
 }
