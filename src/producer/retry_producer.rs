@@ -74,12 +74,17 @@ impl RetryProducer {
     Self {channel}
   }
 
-  pub async fn publish(&self) {
+  pub async fn publish(
+    &self,
+    exchange_name: &str,
+    routing_key: &str,
+    payload: &[u8],
+  ) {
     self.channel.basic_publish(
-      "",
-      "queue_test",
+      exchange_name,
+      routing_key,
       BasicPublishOptions::default(),
-      b"Hello world!",
+      payload,
       BasicProperties::default(),
     )
     .await
