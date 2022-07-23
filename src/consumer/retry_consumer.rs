@@ -1,6 +1,7 @@
 use std::{
 	future::Future
 };
+use futures_lite::stream::StreamExt;
 use lapin::{
   Consumer,
   options::{
@@ -11,12 +12,12 @@ use lapin::{
 use crate::{
   core::{
     connection::Connection,
-    types::{DeliveryHandler},
+    types::{DeliveryHandler, MessageHandler},
   },
 };
 
 pub struct RetryConsumer {
-  consumer: Consumer,
+  pub consumer: Consumer,
 }
 
 impl RetryConsumer {
@@ -37,7 +38,13 @@ impl RetryConsumer {
     Self {consumer}
   }
 
-  pub fn consume <F: Future<Output = ()> + Send + 'static>(&self, handler: DeliveryHandler<F>) {
+  pub async fn consume<F: Future<Output = ()> + Send + 'static>(&mut self, handler: MessageHandler<F>) {
+    while let Some(delivery) = self.consumer.next().await {
+      handler(delivery).await;
+    }
+  }
+
+  pub fn set_delegate<F: Future<Output = ()> + Send + 'static>(&mut self, handler: DeliveryHandler<F>) {
     self.consumer.set_delegate(handler);
   }
 }

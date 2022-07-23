@@ -3,9 +3,12 @@ use std::{
 	pin::Pin,
 };
 use lapin::{
-	message::{DeliveryResult},
+	Result,
+	message::{DeliveryResult, Delivery},
 	ConsumerDelegate,
 };
+
+pub type MessageHandler<F> = Box<dyn Fn(Result<Delivery>) -> F>;
 
 pub struct DeliveryHandler<F>(
 	pub Box<dyn Fn(DeliveryResult) -> F + Send + Sync + 'static>

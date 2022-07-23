@@ -1,10 +1,10 @@
 use lapin::{
-  message::{DeliveryResult},
+  Result,
+  message::{Delivery},
   options::{BasicAckOptions},
 };
 use borsh::{BorshSerialize, BorshDeserialize};
 use amqp::{
-  core::types::DeliveryHandler,
   consumer::retry_consumer::RetryConsumer,
 };
 
@@ -16,39 +16,24 @@ pub struct Message {
 
 #[tokio::main]
 async fn main() {
-  let uri = "amqp://localhost:5672";
+  let uri = "amqp://user:password@localhost:5672";
 
-  let consumer = RetryConsumer::new(
+  let mut retry_consumer = RetryConsumer::new(
     uri,
     "example_queue",
     "basic_consumer",
   ).await;
 
-  let handler = DeliveryHandler(Box::new(move |delivery: DeliveryResult| async move {
-    let delivery = match delivery {
-      // Carries the delivery alongside its channel
-      Ok(Some(delivery)) => delivery,
-      // The consumer got canceled
-      Ok(None) => return,
-      // Carries the error and is always followed by Ok(None)
-      Err(error) => {
-          dbg!("Failed to consume queue message {}", error);
-          return;
-      }
-    };
+  retry_consumer.consume(Box::new(move |delivery: Result<Delivery>| async move {
+    if let Ok(delivery) = delivery {
+      let msg = Message::try_from_slice(&delivery.data).unwrap();
+      println!("{:?}", msg);
 
-    // Do something with the delivery data (The message payload)
-    println!("{:?}", delivery);
+      delivery
+        .ack(BasicAckOptions::default())
+        .await
+        .expect("Failed to ack send_webhook_event message");
+    }
+  })).await;
 
-    let msg = Message::try_from_slice(&delivery.data).unwrap();
-    println!("{:?}", msg);
-
-    delivery
-      .ack(BasicAckOptions::default())
-      .await
-      .expect("Failed to ack send_webhook_event message");
-  }));
-
-  consumer.consume(handler);
 }
-
