@@ -55,6 +55,7 @@ impl RetryConsumer {
         let x_death = headers.inner().get("x-death");
 
         // TODO: THere are too many unwraps here which we don't know if they are safe enough
+        // As long as x_death exist the rest should be present. But we still need to monitor this
         if let Some(x_death) = x_death {
           return x_death
           .as_array()
