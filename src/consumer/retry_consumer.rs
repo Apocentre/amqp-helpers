@@ -12,7 +12,7 @@ use lapin::{
 use crate::{
   core::{
     connection::Connection,
-    types::{DeliveryHandler, MessageHandler},
+    types::{MessageHandler},
   },
 };
 
@@ -42,9 +42,5 @@ impl RetryConsumer {
     while let Some(delivery) = self.consumer.next().await {
       handler(delivery).await;
     }
-  }
-
-  pub fn set_delegate<F: Future<Output = ()> + Send + 'static>(&mut self, handler: DeliveryHandler<F>) {
-    self.consumer.set_delegate(handler);
   }
 }
