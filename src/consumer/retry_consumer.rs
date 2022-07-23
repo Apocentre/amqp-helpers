@@ -80,6 +80,10 @@ impl RetryConsumer {
     Self {consumer}
   }
 
+  pub fn consume() {
+    
+  }
+
   async fn create_exchange(
     channel: &Channel,
     exchange_name: &str,
