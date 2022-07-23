@@ -9,7 +9,7 @@ use lapin::{
     BasicPublishOptions,
   },
   BasicProperties,
-  types::{FieldTable, ShortString},
+  types::{FieldTable, LongString},
 };
 use crate::{
   core::{
@@ -29,7 +29,7 @@ impl RetryProducer {
     exchange_name: &str,
     queue_name: &str,
     routing_key: &str,
-    ttl: u64,
+    ttl: u16,
   ) -> Self {
     let connection = Connection::new(uri).await;
     let channel = connection.create_channel().await;
@@ -47,7 +47,7 @@ impl RetryProducer {
 
     // create the given queue and set the retry 1 exchange as its DLX
     let mut args = FieldTable::default();
-    let dlx = Into::<ShortString>::into(retry_1_exchange_name.clone());
+    let dlx = Into::<LongString>::into(retry_1_exchange_name.clone());
     // https://www.rabbitmq.com/dlx.html
     args.insert("x-dead-letter-exchange".into(), dlx.into());
     let _main_queue = Self::create_queue(&channel, queue_name, args).await;
@@ -62,7 +62,7 @@ impl RetryProducer {
     // create a new temporary wait queue where messaged that are rejected will sit for some short time
     // before they're routed via the DLX retry 2 to the main queue for a retry
     let mut args = FieldTable::default();
-    let dlx = Into::<ShortString>::into(retry_2_exchange_name);
+    let dlx = Into::<LongString>::into(retry_2_exchange_name);
     args.insert("x-dead-letter-exchange".into(), dlx.into());
     // https://www.rabbitmq.com/ttl.html
     args.insert("x-message-ttl".into(), ttl.into());

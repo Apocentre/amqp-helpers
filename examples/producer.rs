@@ -22,7 +22,11 @@ async fn main() {
 
   for i in 0..100 {
     let msg = Message { name: format!("Name {}", i), age: i };
-    producer.publish("example_exchange", "example.send", &msg.try_to_vec().unwrap()).await;
+    producer.publish(
+      "example_exchange",
+      "example.send",
+      &msg.try_to_vec().unwrap()
+    ).await;
     
     sleep(Duration::from_secs(2)).await;
   }
