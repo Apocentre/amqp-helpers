@@ -28,7 +28,7 @@ impl RetryProducer {
     uri: &str,
     exchange_name: &str,
     queue_name: &str,
-    binding_key: &str,
+    routing_key: &str,
     ttl: u64,
   ) -> Self {
     let connection = Connection::new(uri).await;
@@ -53,7 +53,7 @@ impl RetryProducer {
     let _main_queue = Self::create_queue(&channel, queue_name, args).await;
 
     // bind to the original exchange to the main queue
-    Self::queue_bind(&channel, exchange_name, queue_name, binding_key).await;
+    Self::queue_bind(&channel, exchange_name, queue_name, routing_key).await;
 
     // bind the retry DLX exchange to the main queue so messages that need a retry will be routed to it
     // to be next picked up by the consumer for another processing attempt
@@ -134,12 +134,12 @@ impl RetryProducer {
     channel: &Channel,
     exchange_name: &str,
     queue_name: &str,
-    binding_key: &str,
+    routing_key: &str,
   ) {
     channel.queue_bind(
       queue_name,
       exchange_name,
-      binding_key,
+      routing_key,
       QueueBindOptions {
         nowait: true,
       },
