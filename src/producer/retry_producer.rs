@@ -148,7 +148,7 @@ impl RetryProducer {
   }
 
   fn get_retry_exchange_name(exchange_name: &str, count: u8,) -> String {
-    format!("{}dlx_retry_{}", exchange_name, count)
+    format!("{}.dlx_retry_{}", exchange_name, count)
   }
 
   fn get_wait_queue_name(queue_name: &str) -> String {
