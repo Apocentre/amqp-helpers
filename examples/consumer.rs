@@ -4,7 +4,7 @@ use lapin::{
   options::{BasicAckOptions, BasicNackOptions},
 };
 use borsh::{BorshSerialize, BorshDeserialize};
-use amqp::{
+use amqp_helpers::{
   consumer::retry_consumer::RetryConsumer,
 };
 

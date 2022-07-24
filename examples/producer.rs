@@ -1,6 +1,6 @@
 use tokio::time::{sleep, Duration};
 use borsh::{BorshSerialize, BorshDeserialize};
-use amqp::producer::retry_producer::RetryProducer;
+use amqp_helpers::producer::retry_producer::RetryProducer;
 
 #[derive(BorshSerialize, BorshDeserialize, PartialEq, Debug)]
 pub struct Message {
