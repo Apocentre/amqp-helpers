@@ -1,4 +1,5 @@
 use tokio::time::{sleep, Duration};
+use eyre::Result;
 use borsh::{BorshSerialize, BorshDeserialize};
 use amqp_helpers::producer::retry_producer::RetryProducer;
 
@@ -9,7 +10,7 @@ pub struct Message {
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<()> {
   let uri = "amqp://user:password@localhost:5672";
 
   let producer = RetryProducer::new(
@@ -18,7 +19,7 @@ async fn main() {
     "example_queue",
     "example.send",
     5_000, //  5 seconds
-  ).await;
+  ).await?;
 
   for i in 0..1 {
     let msg = Message { name: format!("Name {}", i), age: i };
@@ -26,8 +27,10 @@ async fn main() {
       "example_exchange",
       "example.send",
       &msg.try_to_vec().unwrap()
-    ).await;
+    ).await?;
     
     sleep(Duration::from_secs(2)).await;
   }
+
+  Ok(())
 }

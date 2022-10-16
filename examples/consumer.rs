@@ -35,6 +35,6 @@ async fn main() {
         .await
         .expect("Failed to ack send_webhook_event message");
     }
-  })).await;
+  })).await.unwrap();
 
 }
