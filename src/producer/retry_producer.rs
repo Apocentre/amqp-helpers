@@ -1,3 +1,4 @@
+use eyre::Result;
 use lapin::{
   Channel,
   ExchangeKind,
@@ -30,7 +31,7 @@ impl RetryProducer {
     queue_name: &str,
     routing_key: &str,
     ttl: u16,
-  ) -> Self {
+  ) -> Result<Self> {
     let connection = Connection::new(uri).await;
     let channel = connection.create_channel().await;
 
@@ -39,11 +40,11 @@ impl RetryProducer {
     let wait_queue_name = Self::get_wait_queue_name(queue_name);
 
     // the main exchange that will route the messages to the queue
-    Self::create_exchange(&channel, exchange_name, ExchangeKind::Direct).await;
+    Self::create_exchange(&channel, exchange_name, ExchangeKind::Direct).await?;
     // the retry DLX that will accept messages when the consumer rejects a message
-    Self::create_exchange(&channel, &retry_1_exchange_name, ExchangeKind::Topic).await;
+    Self::create_exchange(&channel, &retry_1_exchange_name, ExchangeKind::Topic).await?;
     // the retry DLX that will accept messages that will be ttl'ed from the temporary wait queue
-    Self::create_exchange(&channel, &retry_2_exchange_name, ExchangeKind::Topic).await;
+    Self::create_exchange(&channel, &retry_2_exchange_name, ExchangeKind::Topic).await?;
 
     // create the given queue and set the retry 1 exchange as its DLX
     let mut args = FieldTable::default();
@@ -53,11 +54,11 @@ impl RetryProducer {
     let _main_queue = Self::create_queue(&channel, queue_name, args).await;
 
     // bind to the original exchange to the main queue
-    Self::queue_bind(&channel, exchange_name, queue_name, routing_key).await;
+    Self::queue_bind(&channel, exchange_name, queue_name, routing_key).await?;
 
     // bind the retry DLX exchange to the main queue so messages that need a retry will be routed to it
     // to be next picked up by the consumer for another processing attempt
-    Self::queue_bind(&channel, &retry_2_exchange_name, queue_name, ANY_MESSAGE).await;
+    Self::queue_bind(&channel, &retry_2_exchange_name, queue_name, ANY_MESSAGE).await?;
 
     // create a new temporary wait queue where messaged that are rejected will sit for some short time
     // before they're routed via the DLX retry 2 to the main queue for a retry
@@ -69,9 +70,9 @@ impl RetryProducer {
     let _wait_queue = Self::create_queue(&channel, &wait_queue_name, args).await;
 
     // finally, bind the wait queue to the retry DLX where messages that are rejected are sent back to the main queue
-    Self::queue_bind(&channel, &retry_1_exchange_name, &wait_queue_name, ANY_MESSAGE).await;
+    Self::queue_bind(&channel, &retry_1_exchange_name, &wait_queue_name, ANY_MESSAGE).await?;
 
-    Self {channel}
+    Ok(Self {channel})
   }
 
   pub async fn publish(
@@ -79,7 +80,7 @@ impl RetryProducer {
     exchange_name: &str,
     routing_key: &str,
     payload: &[u8],
-  ) {
+  ) -> Result<()> {
     self.channel.basic_publish(
       exchange_name,
       routing_key,
@@ -87,17 +88,17 @@ impl RetryProducer {
       payload,
       BasicProperties::default(),
     )
-    .await
-    .unwrap()
-    .await
-    .unwrap();
+    .await?
+    .await?;
+
+    Ok(())
   }
 
   async fn create_exchange(
     channel: &Channel,
     exchange_name: &str,
     exchange_kind: ExchangeKind,
-  ) {
+  ) -> Result<()> {
     channel.exchange_declare(
       exchange_name,
       exchange_kind,
@@ -109,15 +110,17 @@ impl RetryProducer {
         nowait: true, // TODO: what does this field mean?
       },
       FieldTable::default()
-    ).await.expect(&format!("cannot create {} exchange", exchange_name));
+    ).await?;
+
+    Ok(())
   }
 
   async fn create_queue(
     channel: &Channel,
     queue_name: &str,
     args: FieldTable,
-  ) -> Queue {
-    channel.queue_declare(
+  ) -> Result<Queue> {
+    let queue = channel.queue_declare(
       queue_name,
       QueueDeclareOptions {
         passive: false, // TODO: what does this field mean?
@@ -127,7 +130,9 @@ impl RetryProducer {
         nowait: true, // TODO: what does this field mean?
       },
       args,
-    ).await.expect(&format!("cannot create {} queue", queue_name))
+    ).await?;
+
+    Ok(queue)
   }
 
   async fn queue_bind(
@@ -135,7 +140,7 @@ impl RetryProducer {
     exchange_name: &str,
     queue_name: &str,
     routing_key: &str,
-  ) {
+  ) -> Result<()> {
     channel.queue_bind(
       queue_name,
       exchange_name,
@@ -144,7 +149,9 @@ impl RetryProducer {
         nowait: true,
       },
       FieldTable::default(),
-    ).await.expect(&format!("cannot bind {} queue to exchange {}", queue_name, exchange_name));
+    ).await?;
+
+    Ok(())
   }
 
   fn get_retry_exchange_name(exchange_name: &str, count: u8,) -> String {
