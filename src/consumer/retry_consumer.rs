@@ -2,8 +2,9 @@ use std::{
 	future::Future
 };
 use futures_lite::stream::StreamExt;
+use eyre::{Result, ContextCompat};
 use lapin::{
-  Result,
+  Result as LapinResult,
   Consumer,
   options::{
     BasicConsumeOptions,
@@ -40,38 +41,41 @@ impl RetryConsumer {
     Self {consumer}
   }
 
-  pub async fn consume<F: Future<Output = ()> + Send + 'static>(&mut self, handler: MessageHandler<F>) {
+  pub async fn consume<F: Future<Output = ()> + Send + 'static>(&mut self, handler: MessageHandler<F>) -> Result<()> {
     while let Some(delivery) = self.consumer.next().await {
-      let retry_count = Self::get_retry_count(&delivery);
+      let retry_count = Self::get_retry_count(&delivery)?;
       handler(delivery, retry_count).await;
     }
+
+    Ok(())
   }
 
-  fn get_retry_count(delivery: &Result<Delivery>) -> i64 {
+  fn get_retry_count(delivery: &LapinResult<Delivery>) -> Result<i64> {
     if let Ok(delivery) = delivery {
       let headers = delivery.properties.headers();
 
       if let Some(headers) = headers {
         let x_death = headers.inner().get("x-death");
 
-        // TODO: THere are too many unwraps here which we don't know if they are safe enough
         // As long as x_death exist the rest should be present. But we still need to monitor this
         if let Some(x_death) = x_death {
-          return x_death
-          .as_array()
-          .unwrap()
-          .as_slice()[0]
-          .as_field_table()
-          .unwrap()
-          .inner()
-          .get("count")
-          .unwrap()
-          .as_long_long_int()
-          .unwrap_or(1)
+          return Ok(
+            x_death
+            .as_array()
+            .context("")?
+            .as_slice()[0]
+            .as_field_table()
+            .context("")?
+            .inner()
+            .get("count")
+            .context("")?
+            .as_long_long_int()
+            .unwrap_or(1)
+          )
         }
       }
     }
 
-    1
+    Ok(1)
   }
 }
