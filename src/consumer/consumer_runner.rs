@@ -51,7 +51,7 @@ where
 
     let handler = Arc::clone(&self.handler);
 
-    self.retry_consumer.consume(Box::new(move |delivery: LapinResult<Delivery>, _| {
+    self.retry_consumer.consume(Box::new(move |delivery: LapinResult<Delivery>, retry_count: i64| {
       let handler = Arc::clone(&handler);
 
       async move {  
@@ -61,6 +61,7 @@ where
           let result = handler.handle(
             event, 
             &delivery,
+            retry_count,
           ).await;
 
           match result {
