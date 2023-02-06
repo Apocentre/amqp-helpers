@@ -40,11 +40,11 @@ impl RetryProducer {
     let wait_queue_name = Self::get_wait_queue_name(queue_name);
 
     // the main exchange that will route the messages to the queue
-    Self::create_exchange(&channel, exchange_name, ExchangeKind::Direct).await?;
+    Self::create_exchange(&channel, exchange_name, ExchangeKind::Direct, FieldTable::default()).await?;
     // the retry DLX that will accept messages when the consumer rejects a message
-    Self::create_exchange(&channel, &retry_1_exchange_name, ExchangeKind::Topic).await?;
+    Self::create_exchange(&channel, &retry_1_exchange_name, ExchangeKind::Topic, FieldTable::default()).await?;
     // the retry DLX that will accept messages that will be ttl'ed from the temporary wait queue
-    Self::create_exchange(&channel, &retry_2_exchange_name, ExchangeKind::Topic).await?;
+    Self::create_exchange(&channel, &retry_2_exchange_name, ExchangeKind::Topic, FieldTable::default()).await?;
 
     // create the given queue and set the retry 1 exchange as its DLX
     let mut args = FieldTable::default();
@@ -53,7 +53,7 @@ impl RetryProducer {
     args.insert("x-dead-letter-exchange".into(), dlx.into());
     let _main_queue = Self::create_queue(&channel, queue_name, args).await;
 
-    // bind to the original exchange to the main queue
+    // bind the original exchange to the main queue
     Self::queue_bind(&channel, exchange_name, queue_name, routing_key).await?;
 
     // bind the retry DLX exchange to the main queue so messages that need a retry will be routed to it
@@ -98,6 +98,7 @@ impl RetryProducer {
     channel: &Channel,
     exchange_name: &str,
     exchange_kind: ExchangeKind,
+    args: FieldTable,
   ) -> Result<()> {
     channel.exchange_declare(
       exchange_name,
@@ -109,7 +110,7 @@ impl RetryProducer {
         internal: false,
         nowait: true, // TODO: what does this field mean?
       },
-      FieldTable::default()
+      args,
     ).await?;
 
     Ok(())
