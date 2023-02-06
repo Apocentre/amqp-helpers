@@ -10,7 +10,7 @@ use lapin::{
     BasicPublishOptions,
   },
   BasicProperties,
-  types::{FieldTable, LongString},
+  types::{FieldTable, LongString, AMQPValue},
 };
 use crate::{
   core::{
@@ -22,6 +22,7 @@ const ANY_MESSAGE: &str = "#";
 
 pub struct RetryProducer {
   channel: Channel,
+  delay_ms: Option<i32>,
 }
 
 impl RetryProducer {
@@ -31,6 +32,7 @@ impl RetryProducer {
     queue_name: &str,
     routing_key: &str,
     ttl: u16,
+    delay_ms: Option<i32>,
   ) -> Result<Self> {
     let connection = Connection::new(uri).await;
     let channel = connection.create_channel().await;
@@ -39,8 +41,16 @@ impl RetryProducer {
     let retry_2_exchange_name = Self::get_retry_exchange_name(exchange_name, 2);
     let wait_queue_name = Self::get_wait_queue_name(queue_name);
 
+    let (main_ex_args, main_ex_kind) = if let Some(_) = delay_ms {
+      let mut options = FieldTable::default();
+      options.insert("x-delayed-type".into(), AMQPValue::LongString("direct".into()));
+      (options, ExchangeKind::Custom("x-delayed-message".into()),)
+    } else {
+      (FieldTable::default(), ExchangeKind::Direct)
+    };
+
     // the main exchange that will route the messages to the queue
-    Self::create_exchange(&channel, exchange_name, ExchangeKind::Direct, FieldTable::default()).await?;
+    Self::create_exchange(&channel, exchange_name, main_ex_kind, main_ex_args).await?;
     // the retry DLX that will accept messages when the consumer rejects a message
     Self::create_exchange(&channel, &retry_1_exchange_name, ExchangeKind::Topic, FieldTable::default()).await?;
     // the retry DLX that will accept messages that will be ttl'ed from the temporary wait queue
@@ -72,7 +82,7 @@ impl RetryProducer {
     // finally, bind the wait queue to the retry DLX where messages that are rejected are sent back to the main queue
     Self::queue_bind(&channel, &retry_1_exchange_name, &wait_queue_name, ANY_MESSAGE).await?;
 
-    Ok(Self {channel})
+    Ok(Self {channel, delay_ms})
   }
 
   pub async fn publish(
@@ -81,12 +91,20 @@ impl RetryProducer {
     routing_key: &str,
     payload: &[u8],
   ) -> Result<()> {
+    let basic_props = if let Some(delay_ms) = self.delay_ms {
+      let mut headers = FieldTable::default();
+      headers.insert("x-delay".into(), AMQPValue::LongInt(delay_ms));
+      BasicProperties::default().with_headers(headers)
+    } else {
+      BasicProperties::default()
+    };
+
     self.channel.basic_publish(
       exchange_name,
       routing_key,
       BasicPublishOptions::default(),
       payload,
-      BasicProperties::default(),
+      basic_props,
     )
     .await?
     .await?;
