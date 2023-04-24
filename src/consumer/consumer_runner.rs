@@ -31,19 +31,21 @@ where
     rabbitmq_uri: String,
     queue_name: String,
     consumer_tag: String,
+    prefetch_count: u16,
     handler: Arc<H>,
-  ) -> Self {
+  ) -> Result<Self> {
     let retry_consumer = RetryConsumer::new(
       &rabbitmq_uri,
       &queue_name,
       &consumer_tag,
-    ).await;
+      prefetch_count,
+    ).await?;
 
-    Self {
+    Ok(Self {
       retry_consumer,
       handler,
       phantom: PhantomData::default(),
-    }
+    })
   }
 
   pub async fn start(&mut self) -> Result<()> {

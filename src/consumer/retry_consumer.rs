@@ -7,7 +7,7 @@ use lapin::{
   Result as LapinResult,
   Consumer,
   options::{
-    BasicConsumeOptions,
+    BasicConsumeOptions, BasicQosOptions,
   },
   message::{Delivery},
   types::{FieldTable},
@@ -28,17 +28,21 @@ impl RetryConsumer {
     uri: &str,
     queue_name: &str,
     consumer_tag: &str,
-  ) -> Self {
+    prefetch_count: u16,
+  ) -> Result<Self> {
     let connection = Connection::new(uri).await;
-    let channel = connection.create_channel().await;    
-    let consumer = channel.basic_consume(
+    let channel = connection.create_channel().await;
+    channel.basic_qos(prefetch_count, BasicQosOptions {global: false}).await?;
+
+    let consumer = channel
+    .basic_consume(
       queue_name,
       consumer_tag,
       BasicConsumeOptions::default(),
       FieldTable::default(),
     ).await.expect("cannot create consumer");
 
-    Self {consumer}
+    Ok(Self {consumer})
   }
 
   pub async fn consume<F: Future<Output = ()> + Send + 'static>(&mut self, handler: MessageHandler<F>) -> Result<()> {
