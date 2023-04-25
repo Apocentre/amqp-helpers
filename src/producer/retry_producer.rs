@@ -31,7 +31,7 @@ impl RetryProducer {
     exchange_name: &str,
     queue_name: &str,
     routing_key: &str,
-    ttl: u16,
+    ttl: u32,
     delay_ms: Option<i32>,
   ) -> Result<Self> {
     let connection = Connection::new(uri).await;
