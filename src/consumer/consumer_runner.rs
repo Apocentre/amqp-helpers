@@ -1,12 +1,11 @@
 use std::{
-  sync::Arc,
-  marker::PhantomData,
+  sync::Arc, marker::PhantomData, time::Instant,
 };
 use eyre::Result;
+use log::{trace};
 use borsh::BorshDeserialize;
 use lapin::{
-  Result as LapinResult,
-  message::{Delivery},
+  Result as LapinResult, message::{Delivery},
   options::{BasicAckOptions, BasicNackOptions},
 };
 use crate::core::types::Handler;
@@ -56,8 +55,9 @@ where
     self.retry_consumer.consume(Box::new(move |delivery: LapinResult<Delivery>, retry_count: i64| {
       let handler = Arc::clone(&handler);
 
-      async move {  
+      async move {
         if let Ok(delivery) = delivery {
+          let start = Instant::now();
           let event = M::try_from_slice(&delivery.data).unwrap();
 
           let result = handler.handle(
@@ -68,18 +68,25 @@ where
 
           match result {
             Ok(()) => {
+              trace!("Msg acked");
+
               delivery
               .ack(BasicAckOptions::default())
               .await
               .expect("ack");
             },
-            Err(_) => {
+            Err(_) => { 
+              trace!("Msg nacked");
+
               delivery
               .nack(BasicNackOptions::default())
               .await
               .expect("nack");
             }
           }
+
+          let duration = start.elapsed();
+          trace!("Msg exec time: {:?}", duration);
         }
     }})).await?;
 
