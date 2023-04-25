@@ -75,8 +75,8 @@ where
               .await
               .expect("ack");
             },
-            Err(_) => { 
-              trace!("Msg nacked");
+            Err(error) => { 
+              trace!("Msg nacked {:?}", error);
 
               delivery
               .nack(BasicNackOptions::default())
