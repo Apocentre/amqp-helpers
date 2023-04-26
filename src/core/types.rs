@@ -5,7 +5,7 @@ use lapin::{
 	message::{Delivery},
 };
 
-pub type MessageHandler<F> = Box<dyn FnMut(Result<Delivery>, i64) -> F>;
+pub type MessageHandler<F> = Box<dyn FnMut(Result<Delivery>, i64) -> F + Send>;
 
 #[async_trait]
 pub trait Handler<M: BorshDeserialize + Send + Sync> {
