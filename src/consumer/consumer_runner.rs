@@ -1,5 +1,5 @@
 use std::{
-  sync::Arc, marker::PhantomData, time::Instant,
+  marker::PhantomData, time::Instant,
 };
 use eyre::Result;
 use log::{trace};
@@ -17,7 +17,7 @@ where
   H: Handler<M> + Send  + Sync + 'static
 {
   retry_consumer: RetryConsumer,
-  handler: Arc<H>,
+  handler: Option<H>,
   phantom: PhantomData<M>,
 }
 
@@ -31,7 +31,7 @@ where
     queue_name: String,
     consumer_tag: String,
     prefetch_count: u16,
-    handler: Arc<H>,
+    handler: H,
   ) -> Result<Self> {
     let retry_consumer = RetryConsumer::new(
       &rabbitmq_uri,
@@ -42,20 +42,20 @@ where
 
     Ok(Self {
       retry_consumer,
-      handler,
+      handler: Some(handler),
       phantom: PhantomData::default(),
     })
   }
 
-  pub async fn start(&mut self) -> Result<()> {
+  pub async fn start(&'static mut self) -> Result<()> {
     println!("Running...");
 
-    let handler = Arc::clone(&self.handler);
-
-    self.retry_consumer.consume(Box::new(move |delivery: LapinResult<Delivery>, retry_count: i64| {
-      let handler = Arc::clone(&handler);
+    self.retry_consumer.consume(Box::new(|delivery: LapinResult<Delivery>, retry_count: i64| {
+      // similar to std::mem::replace(&mut self.handler, None);
+      let handler = self.handler.take();
 
       async move {
+        let mut handler = handler.unwrap();
         if let Ok(delivery) = delivery {
           let start = Instant::now();
           let event = M::try_from_slice(&delivery.data).unwrap();
