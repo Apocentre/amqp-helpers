@@ -1,6 +1,7 @@
 use std::{
-  marker::PhantomData, time::Instant,
+  marker::PhantomData, time::Instant, sync::{Arc},
 };
+use tokio::sync::Mutex;
 use eyre::Result;
 use log::{trace};
 use borsh::BorshDeserialize;
@@ -14,10 +15,10 @@ use super::retry_consumer::RetryConsumer;
 pub struct ConsumerRunner<M, H>
 where
   M: BorshDeserialize + Send + Sync,
-  H: Handler<M> + Send  + Sync + 'static
+  H: Handler<M> + Send + Sync + 'static
 {
   retry_consumer: RetryConsumer,
-  handler: Option<H>,
+  handler: Arc<Mutex<H>>,
   phantom: PhantomData<M>,
 }
 
@@ -42,7 +43,7 @@ where
 
     Ok(Self {
       retry_consumer,
-      handler: Some(handler),
+      handler: Arc::new(Mutex::new(handler)),
       phantom: PhantomData::default(),
     })
   }
@@ -51,11 +52,11 @@ where
     println!("Running...");
 
     self.retry_consumer.consume(Box::new(move |delivery: LapinResult<Delivery>, retry_count: i64| {
-      // similar to std::mem::replace(&mut self.handler, None);
-      let handler = self.handler.take();
+      let handler = Arc::clone(&self.handler);
 
       async move {
-        let mut handler = handler.unwrap();
+        let mut handler = handler.lock().await;
+
         if let Ok(delivery) = delivery {
           let start = Instant::now();
           let event = M::try_from_slice(&delivery.data).unwrap();
