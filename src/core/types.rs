@@ -5,9 +5,9 @@ use lapin::{
 	message::{Delivery},
 };
 
-pub type MessageHandler<F> = Box<dyn Fn(Result<Delivery>, i64) -> F + Send + Sync + 'static>;
+pub type MessageHandler<F> = Box<dyn FnMut(Result<Delivery>, i64) -> F + Send>;
 
 #[async_trait]
 pub trait Handler<M: BorshDeserialize + Send + Sync> {
-  async fn handle(&self, model: M, delivery: &Delivery, retry_count: i64) -> eyre::Result<()>;
+  async fn handle(&mut self, model: M, delivery: &Delivery, retry_count: i64) -> eyre::Result<()>;
 }

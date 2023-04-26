@@ -45,7 +45,7 @@ impl RetryConsumer {
     Ok(Self {consumer})
   }
 
-  pub async fn consume<F: Future<Output = ()> + Send + 'static>(&mut self, handler: MessageHandler<F>) -> Result<()> {
+  pub async fn consume<F: Future<Output = ()> + Send + 'static>(&mut self, mut handler: MessageHandler<F>) -> Result<()> {
     while let Some(delivery) = self.consumer.next().await {
       let retry_count = Self::get_retry_count(&delivery)?;
       handler(delivery, retry_count).await;
