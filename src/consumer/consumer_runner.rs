@@ -47,10 +47,10 @@ where
     })
   }
 
-  pub async fn start(&'static mut self) -> Result<()> {
+  pub async fn start(mut self) -> Result<()> {
     println!("Running...");
 
-    self.retry_consumer.consume(Box::new(|delivery: LapinResult<Delivery>, retry_count: i64| {
+    self.retry_consumer.consume(Box::new(move |delivery: LapinResult<Delivery>, retry_count: i64| {
       // similar to std::mem::replace(&mut self.handler, None);
       let handler = self.handler.take();
 
