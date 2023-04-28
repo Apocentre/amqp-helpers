@@ -90,14 +90,19 @@ impl RetryProducer {
     exchange_name: &str,
     routing_key: &str,
     payload: &[u8],
+    persistent: bool,
   ) -> Result<()> {
-    let basic_props = if let Some(delay_ms) = self.delay_ms {
+    let mut basic_props = if let Some(delay_ms) = self.delay_ms {
       let mut headers = FieldTable::default();
       headers.insert("x-delay".into(), AMQPValue::LongInt(delay_ms));
       BasicProperties::default().with_headers(headers)
     } else {
       BasicProperties::default()
     };
+
+    if persistent {
+      basic_props = basic_props.with_delivery_mode(2);
+    }
 
     self.channel.basic_publish(
       exchange_name,
