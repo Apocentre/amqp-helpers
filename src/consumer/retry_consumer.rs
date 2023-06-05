@@ -7,10 +7,10 @@ use lapin::{
   Result as LapinResult,
   Consumer,
   options::{
-    BasicConsumeOptions, BasicQosOptions,
+    BasicConsumeOptions, BasicQosOptions, BasicGetOptions,
   },
-  message::{Delivery},
-  types::{FieldTable},
+  message::{Delivery, BasicGetMessage},
+  types::{FieldTable}, Channel,
 };
 use crate::{
   core::{
@@ -25,7 +25,9 @@ pub struct NextItem {
 }
 
 pub struct RetryConsumer {
-  pub consumer: Consumer,
+  channel: Channel,
+  consumer: Consumer,
+  queue_name: String,
 }
 
 impl RetryConsumer {
@@ -47,7 +49,11 @@ impl RetryConsumer {
       FieldTable::default(),
     ).await.expect("cannot create consumer");
 
-    Ok(Self {consumer})
+    Ok(Self {
+      channel,
+      consumer,
+      queue_name: queue_name.to_string(),
+    })
   }
 
   pub async fn consume<F>(&mut self, mut handler: MessageHandler<F>) -> Result<()>
@@ -63,8 +69,11 @@ impl RetryConsumer {
   }
 
   pub async fn next(&mut self) -> Result<Option<NextItem>> {
-    let Some(delivery) = self.consumer.next().await else {return Ok(None)};
+    let basic_get_result = self.channel.basic_get(&self.queue_name, BasicGetOptions {no_ack: true}).await?;
+    let Some(BasicGetMessage {delivery, ..}) = basic_get_result else {return Ok(None)};
+    let delivery = Ok(delivery);
     let retry_count = Self::get_retry_count(&delivery)?;
+
     let next_item = NextItem {
       delivery: delivery?,
       retry_count
