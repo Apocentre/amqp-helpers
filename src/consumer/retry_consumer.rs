@@ -7,10 +7,10 @@ use lapin::{
   Result as LapinResult,
   Consumer,
   options::{
-    BasicConsumeOptions, BasicQosOptions, BasicGetOptions,
+    BasicConsumeOptions, BasicQosOptions,
   },
-  message::{Delivery, BasicGetMessage},
-  types::{FieldTable}, Channel,
+  message::{Delivery},
+  types::{FieldTable},
 };
 use crate::{
   core::{
@@ -19,15 +19,8 @@ use crate::{
   },
 };
 
-pub struct NextItem {
-  pub delivery: Delivery,
-  pub retry_count: i64,
-}
-
 pub struct RetryConsumer {
-  channel: Channel,
-  consumer: Consumer,
-  queue_name: String,
+  pub consumer: Consumer,
 }
 
 impl RetryConsumer {
@@ -49,11 +42,7 @@ impl RetryConsumer {
       FieldTable::default(),
     ).await.expect("cannot create consumer");
 
-    Ok(Self {
-      channel,
-      consumer,
-      queue_name: queue_name.to_string(),
-    })
+    Ok(Self {consumer})
   }
 
   pub async fn consume<F>(&mut self, mut handler: MessageHandler<F>) -> Result<()>
@@ -68,21 +57,7 @@ impl RetryConsumer {
     Ok(())
   }
 
-  pub async fn next(&mut self) -> Result<Option<NextItem>> {
-    let basic_get_result = self.channel.basic_get(&self.queue_name, BasicGetOptions {no_ack: true}).await?;
-    let Some(BasicGetMessage {delivery, ..}) = basic_get_result else {return Ok(None)};
-    let delivery = Ok(delivery);
-    let retry_count = Self::get_retry_count(&delivery)?;
-
-    let next_item = NextItem {
-      delivery: delivery?,
-      retry_count
-    };
-    
-    Ok(Some(next_item))
-  }
-
-  fn get_retry_count(delivery: &LapinResult<Delivery>) -> Result<i64> {
+  pub fn get_retry_count(delivery: &LapinResult<Delivery>) -> Result<i64> {
     if let Ok(delivery) = delivery {
       let headers = delivery.properties.headers();
 
