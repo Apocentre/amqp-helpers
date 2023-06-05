@@ -19,6 +19,11 @@ use crate::{
   },
 };
 
+pub struct NextItem {
+  pub delivery: Delivery,
+  pub retry_count: i64,
+}
+
 pub struct RetryConsumer {
   pub consumer: Consumer,
 }
@@ -45,13 +50,30 @@ impl RetryConsumer {
     Ok(Self {consumer})
   }
 
-  pub async fn consume<F: Future<Output = ()> + Send + 'static>(&mut self, mut handler: MessageHandler<F>) -> Result<()> {
+  pub async fn consume<F>(&mut self, mut handler: MessageHandler<F>) -> Result<()>
+  where
+    F: Future<Output = ()> + Send + 'static
+  {
     while let Some(delivery) = self.consumer.next().await {
       let retry_count = Self::get_retry_count(&delivery)?;
       handler(delivery, retry_count).await;
     }
 
     Ok(())
+  }
+
+  pub async fn next<F>(&mut self) -> Result<Option<NextItem>>
+  where
+    F:Future<Output = ()> + Send + 'static 
+  {
+    let Some(delivery) = self.consumer.next().await else {return Ok(None)};
+    let retry_count = Self::get_retry_count(&delivery)?;
+    let next_item = NextItem {
+      delivery: delivery?,
+      retry_count
+    };
+    
+    Ok(Some(next_item))
   }
 
   fn get_retry_count(delivery: &LapinResult<Delivery>) -> Result<i64> {
