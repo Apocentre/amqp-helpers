@@ -62,10 +62,7 @@ impl RetryConsumer {
     Ok(())
   }
 
-  pub async fn next<F>(&mut self) -> Result<Option<NextItem>>
-  where
-    F:Future<Output = ()> + Send + 'static 
-  {
+  pub async fn next(&mut self) -> Result<Option<NextItem>> {
     let Some(delivery) = self.consumer.next().await else {return Ok(None)};
     let retry_count = Self::get_retry_count(&delivery)?;
     let next_item = NextItem {
