@@ -29,7 +29,7 @@ impl PullConsumer {
     Ok(Self {channel, queue_name})
   }
   
-  pub async fn next(&mut self) -> Result<Option<NextItem>> {
+  pub async fn next(&self) -> Result<Option<NextItem>> {
     let basic_get_result = self.channel.basic_get(&self.queue_name, BasicGetOptions {no_ack: false}).await?;
     let Some(BasicGetMessage {delivery, ..}) = basic_get_result else {return Ok(None)};
     let delivery = Ok(delivery);
