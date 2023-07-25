@@ -14,6 +14,7 @@ pub struct NextItem {
 /// Consumer using the (basic.get) Pull Api
 pub struct PullConsumer {
   channel: Channel,
+  connection: Connection,
   queue_name: String,
 }
 
@@ -26,7 +27,19 @@ impl PullConsumer {
     let channel = connection.create_channel().await;
     let queue_name = queue_name.to_owned();
 
-    Ok(Self {channel, queue_name})
+    Ok(Self {
+      connection,
+      channel,
+      queue_name,
+    })
+  }
+
+  /// This is a usefull technique to allow the unacked messages being returns back to the ready state.
+  /// The client of this lib can periodically call this function to re-establish the channel.
+  pub async fn recreate_channel(&mut self) -> Result<()> {
+    self.channel = self.connection.create_channel().await;
+
+    Ok(())
   }
   
   pub async fn next(&self) -> Result<Option<NextItem>> {
