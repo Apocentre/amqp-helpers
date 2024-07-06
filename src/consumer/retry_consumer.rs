@@ -1,6 +1,4 @@
-use std::{
-	future::Future
-};
+use std::future::Future;
 use futures_lite::stream::StreamExt;
 use eyre::{Result, ContextCompat};
 use lapin::{
@@ -9,14 +7,12 @@ use lapin::{
   options::{
     BasicConsumeOptions, BasicQosOptions,
   },
-  message::{Delivery},
-  types::{FieldTable},
+  message::Delivery,
+  types::FieldTable,
 };
-use crate::{
-  core::{
-    connection::Connection,
-    types::{MessageHandler},
-  },
+use crate::core::{
+  connection::Connection,
+  types::MessageHandler,
 };
 
 pub struct RetryConsumer {

@@ -12,11 +12,7 @@ use lapin::{
   BasicProperties,
   types::{FieldTable, LongString, AMQPValue},
 };
-use crate::{
-  core::{
-    connection::Connection,
-  },
-};
+use crate::core::connection::Connection;
 
 const ANY_MESSAGE: &str = "#";
 

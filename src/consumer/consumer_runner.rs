@@ -1,12 +1,12 @@
 use std::{
-  marker::PhantomData, time::Instant, sync::{Arc},
+  marker::PhantomData, time::Instant, sync::Arc,
 };
 use tokio::sync::Mutex;
 use eyre::Result;
-use log::{trace};
+use log::trace;
 use borsh::BorshDeserialize;
 use lapin::{
-  Result as LapinResult, message::{Delivery},
+  Result as LapinResult, message::Delivery,
   options::{BasicAckOptions, BasicNackOptions},
 };
 use crate::core::types::Handler;
