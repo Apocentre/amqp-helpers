@@ -1,5 +1,5 @@
 use lapin::{
-  message::{Delivery, BasicGetMessage}, Channel, options::BasicGetOptions
+  message::{BasicGetMessage, Delivery}, options::BasicGetOptions, Channel, Error
 };
 use eyre::Result;
 use crate::core::connection::Connection;
@@ -19,12 +19,22 @@ pub struct PullConsumer {
 }
 
 impl PullConsumer {
-  pub async fn new(
+  pub async fn new<E>(
     uri: &str,
     queue_name: &str,
-  ) -> Result<Self> {
-    let connection = Connection::new(uri).await;
+    on_connection_error: Option<E>,
+    on_channel_error: Option<E>,
+  ) -> Result<Self>
+  where
+    E: FnMut(Error) + Send + 'static
+  {
+    let connection = Connection::new(uri, on_connection_error).await;
     let channel = connection.create_channel().await;
+
+    if let Some(h) = on_channel_error {
+      channel.on_error(h);
+    }
+    
     let queue_name = queue_name.to_owned();
 
     Ok(Self {

@@ -1,16 +1,8 @@
 use eyre::Result;
 use lapin::{
-  Channel,
-  ExchangeKind,
-  Queue,
   options::{
-    ExchangeDeclareOptions,
-    QueueDeclareOptions,
-    QueueBindOptions,
-    BasicPublishOptions,
-  },
-  BasicProperties,
-  types::{FieldTable, LongString, AMQPValue},
+    BasicPublishOptions, ExchangeDeclareOptions, QueueBindOptions, QueueDeclareOptions
+  }, types::{AMQPValue, FieldTable, LongString}, BasicProperties, Channel, Error, ExchangeKind, Queue
 };
 use crate::core::connection::Connection;
 
@@ -22,16 +14,25 @@ pub struct RetryProducer {
 }
 
 impl RetryProducer {
-  pub async fn new(
+  pub async fn new<E>(
     uri: &str,
     exchange_name: &str,
     queue_name: &str,
     routing_key: &str,
     ttl: u32,
     delay_ms: Option<i32>,
-  ) -> Result<Self> {
-    let connection = Connection::new(uri).await;
+    on_connection_error: Option<E>,
+    on_channel_error: Option<E>,
+  ) -> Result<Self>
+  where
+    E: FnMut(Error) + Send + 'static
+  {
+    let connection = Connection::new(uri, on_connection_error).await;
     let channel = connection.create_channel().await;
+
+    if let Some(h) = on_channel_error {
+      channel.on_error(h);
+    }
 
     let retry_1_exchange_name = Self::get_retry_exchange_name(exchange_name, 1);
     let retry_2_exchange_name = Self::get_retry_exchange_name(exchange_name, 2);
