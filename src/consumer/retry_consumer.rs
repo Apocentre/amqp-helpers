@@ -2,13 +2,9 @@ use std::future::Future;
 use futures_lite::stream::StreamExt;
 use eyre::{Result, ContextCompat};
 use lapin::{
-  Result as LapinResult,
-  Consumer,
-  options::{
+  message::Delivery, options::{
     BasicConsumeOptions, BasicQosOptions,
-  },
-  message::Delivery,
-  types::FieldTable,
+  }, types::FieldTable, Consumer, Error, Result as LapinResult
 };
 use crate::core::{
   connection::Connection,
@@ -20,15 +16,20 @@ pub struct RetryConsumer {
 }
 
 impl RetryConsumer {
-  pub async fn new(
+  pub async fn new<H>(
     uri: &str,
     queue_name: &str,
     consumer_tag: &str,
     prefetch_count: u16,
-  ) -> Result<Self> {
+    handler: H,
+  ) -> Result<Self> 
+  where
+    H: FnMut(Error) + Send + 'static
+  {
     let connection = Connection::new(uri).await;
     let channel = connection.create_channel().await;
     channel.basic_qos(prefetch_count, BasicQosOptions {global: false}).await?;
+    channel.on_error(handler);
 
     let consumer = channel
     .basic_consume(
