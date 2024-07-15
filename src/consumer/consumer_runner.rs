@@ -6,8 +6,7 @@ use eyre::Result;
 use log::trace;
 use borsh::BorshDeserialize;
 use lapin::{
-  Result as LapinResult, message::Delivery,
-  options::{BasicAckOptions, BasicNackOptions},
+  message::Delivery, options::{BasicAckOptions, BasicNackOptions}, Error, Result as LapinResult
 };
 use crate::core::types::Handler;
 use super::retry_consumer::RetryConsumer;
@@ -27,18 +26,25 @@ where
   M: BorshDeserialize  + Send + Sync,
   H: Handler<M> + Send + Sync + 'static
 {
-  pub async fn new(
+  pub async fn new<E>(
     rabbitmq_uri: String,
     queue_name: String,
     consumer_tag: String,
     prefetch_count: u16,
     handler: H,
-  ) -> Result<Self> {
+    on_connection_error: Option<E>,
+    on_channel_error: Option<E>,
+  ) -> Result<Self>
+  where
+    E: FnMut(Error) + Send + 'static
+  {
     let retry_consumer = RetryConsumer::new(
       &rabbitmq_uri,
       &queue_name,
       &consumer_tag,
       prefetch_count,
+      on_connection_error,
+      on_channel_error,
     ).await?;
 
     Ok(Self {

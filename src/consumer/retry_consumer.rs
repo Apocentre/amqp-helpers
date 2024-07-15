@@ -16,20 +16,24 @@ pub struct RetryConsumer {
 }
 
 impl RetryConsumer {
-  pub async fn new<H>(
+  pub async fn new<E>(
     uri: &str,
     queue_name: &str,
     consumer_tag: &str,
     prefetch_count: u16,
-    handler: H,
+    on_connection_error: Option<E>,
+    on_channel_error: Option<E>,
   ) -> Result<Self> 
   where
-    H: FnMut(Error) + Send + 'static
+    E: FnMut(Error) + Send + 'static
   {
-    let connection = Connection::new(uri).await;
+    let connection = Connection::new(uri, on_connection_error).await;
     let channel = connection.create_channel().await;
     channel.basic_qos(prefetch_count, BasicQosOptions {global: false}).await?;
-    channel.on_error(handler);
+
+    if let Some(h) = on_channel_error {
+      channel.on_error(h);
+    }
 
     let consumer = channel
     .basic_consume(
