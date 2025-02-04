@@ -1,7 +1,6 @@
 use std::{
   marker::PhantomData, time::Instant, sync::Arc,
 };
-use tokio::sync::Mutex;
 use eyre::Result;
 use log::trace;
 use borsh::BorshDeserialize;
@@ -17,7 +16,7 @@ where
   H: Handler<M> + Send + Sync + 'static
 {
   retry_consumer: RetryConsumer,
-  handler: Arc<Mutex<H>>,
+  handler: Arc<H>,
   phantom: PhantomData<M>,
 }
 
@@ -49,7 +48,7 @@ where
 
     Ok(Self {
       retry_consumer,
-      handler: Arc::new(Mutex::new(handler)),
+      handler: Arc::new(handler),
       phantom: PhantomData::default(),
     })
   }
@@ -61,7 +60,7 @@ where
       let handler = Arc::clone(&self.handler);
 
       async move {
-        let mut handler = handler.lock().await;
+        // let mut handler = handler.lock().await;
 
         if let Ok(delivery) = delivery {
           let start = Instant::now();
