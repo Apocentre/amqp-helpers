@@ -1,21 +1,21 @@
 [package]
 name = "amqp-helpers"
-version = "1.6.0"
+version = "2.0.0"
 edition = "2021"
 license = "BUSL-1.1"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-async-trait = "0.1.56"
+async-trait = "0.1.88"
 eyre = "0.6.12"
-borsh = "1.5.1"
-lapin = "2.3.4"
-log = "0.4.22"
-tokio-executor-trait = "2.1.0"
-tokio-reactor-trait = "1.1.0"
-futures-lite = "1.12.0"
-tokio = "1.38.0"
+borsh = "1.5.7"
+lapin = "3.0.0"
+log = "0.4.27"
+tokio-executor-trait = "2.1.3"
+tokio-reactor-trait = "2.0.0"
+futures-lite = "2.6.0"
+tokio = "1.45.1"
 
 [dev-dependencies]
-tokio = { version = "1.28.0", features = ["rt", "macros"] }
+tokio = { version = "1.45.1", features = ["rt", "macros"] }
