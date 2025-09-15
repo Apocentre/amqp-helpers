@@ -88,6 +88,7 @@ impl RetryProducer {
     routing_key: &str,
     payload: &[u8],
     persistent: bool,
+    ttl: Option<u32>,
   ) -> Result<()> {
     let mut basic_props = if let Some(delay_ms) = self.delay_ms {
       let mut headers = FieldTable::default();
@@ -99,6 +100,13 @@ impl RetryProducer {
 
     if persistent {
       basic_props = basic_props.with_delivery_mode(2);
+    }
+    
+    // per message ttl. When both a per-queue and a per-message TTL are specified,
+    // the lower value between the two will be chosen.
+    // https://www.rabbitmq.com/docs/ttl#per-message-ttl-in-publishers
+    if let Some(ttl) = ttl {
+      basic_props = basic_props.with_expiration(ttl.to_string().into());
     }
 
     self.channel.basic_publish(
