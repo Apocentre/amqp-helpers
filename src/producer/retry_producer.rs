@@ -2,7 +2,7 @@ use eyre::Result;
 use lapin::{
   BasicProperties, Channel, Error, ExchangeKind, Queue, options::{
     BasicPublishOptions, ExchangeDeclareOptions, QueueBindOptions, QueueDeclareOptions
-  }, protocol::exchange, types::{AMQPValue, FieldTable, LongString}
+  }, types::{FieldTable, LongString}
 };
 use crate::core::connection::Connection;
 
