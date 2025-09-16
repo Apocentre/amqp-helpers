@@ -78,7 +78,7 @@ impl RetryConsumer {
             .get("count")
             .context("")?
             .as_long_long_int()
-            .unwrap_or(1)
+            .unwrap_or(0)
           )
         }
       }

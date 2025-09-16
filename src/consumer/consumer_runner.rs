@@ -60,8 +60,6 @@ where
       let handler = Arc::clone(&self.handler);
 
       async move {
-        // let mut handler = handler.lock().await;
-
         if let Ok(delivery) = delivery {
           let start = Instant::now();
           let event = M::try_from_slice(&delivery.data).unwrap();
