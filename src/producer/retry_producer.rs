@@ -1,8 +1,8 @@
 use eyre::Result;
 use lapin::{
-  options::{
+  BasicProperties, Channel, Error, ExchangeKind, Queue, options::{
     BasicPublishOptions, ExchangeDeclareOptions, QueueBindOptions, QueueDeclareOptions
-  }, types::{AMQPValue, FieldTable, LongString}, BasicProperties, Channel, Error, ExchangeKind, Queue
+  }, types::{FieldTable, LongString}
 };
 use crate::core::connection::Connection;
 
@@ -10,7 +10,7 @@ const ANY_MESSAGE: &str = "#";
 
 pub struct RetryProducer {
   channel: Channel,
-  delay_ms: Option<i32>,
+  delay_ms: Option<u32>,
 }
 
 impl RetryProducer {
@@ -20,7 +20,7 @@ impl RetryProducer {
     queue_name: &str,
     routing_key: &str,
     ttl: u32,
-    delay_ms: Option<i32>,
+    delay_ms: Option<u32>,
     on_connection_error: Option<E>,
     on_channel_error: Option<E>,
   ) -> Result<Self>
@@ -36,32 +36,44 @@ impl RetryProducer {
 
     let retry_1_exchange_name = Self::get_retry_exchange_name(exchange_name, 1);
     let retry_2_exchange_name = Self::get_retry_exchange_name(exchange_name, 2);
-    let wait_queue_name = Self::get_wait_queue_name(queue_name);
-
-    let (main_ex_args, main_ex_kind) = if let Some(_) = delay_ms {
-      let mut options = FieldTable::default();
-      options.insert("x-delayed-type".into(), AMQPValue::LongString("direct".into()));
-      (options, ExchangeKind::Custom("x-delayed-message".into()),)
-    } else {
-      (FieldTable::default(), ExchangeKind::Direct)
-    };
+    let wait_queue_name = format!("{}.wait_retry", queue_name);
 
     // the main exchange that will route the messages to the queue
-    Self::create_exchange(&channel, exchange_name, main_ex_kind, main_ex_args).await?;
+    Self::create_exchange(&channel, exchange_name, ExchangeKind::Topic, FieldTable::default()).await?;
     // the retry DLX that will accept messages when the consumer rejects a message
     Self::create_exchange(&channel, &retry_1_exchange_name, ExchangeKind::Topic, FieldTable::default()).await?;
     // the retry DLX that will accept messages that will be ttl'ed from the temporary wait queue
     Self::create_exchange(&channel, &retry_2_exchange_name, ExchangeKind::Topic, FieldTable::default()).await?;
+
+    let mut args = FieldTable::default();
+
+    // create the delay exchange and queue if needed
+    if let Some(delay_ms) = delay_ms {
+      let delay_exchange_name = Self::get_delay_exchange_name(exchange_name);
+      let delay_queue_name = format!("{}.entry_delay", queue_name);
+      // the entry exchange that will receive all messages and will apply the delay logic
+      Self::create_exchange(&channel, &delay_exchange_name, ExchangeKind::Direct, FieldTable::default()).await?;
+
+      // make sure when message ttl'd from the delay queue it goes to the real exchange that will process the message
+      let dlx = Into::<LongString>::into(exchange_name);
+      args.insert("x-dead-letter-exchange".into(), dlx.into());
+      args.insert("x-message-ttl".into(), delay_ms.into());
+      Self::create_queue(&channel, &delay_queue_name, args).await?;
+
+      // bind the entry exchange to the delay queue
+      Self::queue_bind(&channel, &delay_exchange_name, &delay_queue_name, routing_key).await?;
+    }
 
     // create the given queue and set the retry 1 exchange as its DLX
     let mut args = FieldTable::default();
     let dlx = Into::<LongString>::into(retry_1_exchange_name.clone());
     // https://www.rabbitmq.com/dlx.html
     args.insert("x-dead-letter-exchange".into(), dlx.into());
-    let _main_queue = Self::create_queue(&channel, queue_name, args).await;
+    Self::create_queue(&channel, queue_name, args).await?;
 
-    // bind the original exchange to the main queue
-    Self::queue_bind(&channel, exchange_name, queue_name, routing_key).await?;
+    // bind the original exchange to the main queue. Use ANY_MESSAGE because messages
+    // can be published to the exchange_name when ttl'd through the delay queues (if applicable)
+    Self::queue_bind(&channel, exchange_name, queue_name, ANY_MESSAGE).await?;
 
     // bind the retry DLX exchange to the main queue so messages that need a retry will be routed to it
     // to be next picked up by the consumer for another processing attempt
@@ -74,7 +86,7 @@ impl RetryProducer {
     args.insert("x-dead-letter-exchange".into(), dlx.into());
     // https://www.rabbitmq.com/ttl.html
     args.insert("x-message-ttl".into(), ttl.into());
-    let _wait_queue = Self::create_queue(&channel, &wait_queue_name, args).await;
+     Self::create_queue(&channel, &wait_queue_name, args).await?;
 
     // finally, bind the wait queue to the retry DLX where messages that are rejected are sent back to the main queue
     Self::queue_bind(&channel, &retry_1_exchange_name, &wait_queue_name, ANY_MESSAGE).await?;
@@ -90,17 +102,17 @@ impl RetryProducer {
     persistent: bool,
     ttl: Option<u32>,
   ) -> Result<()> {
-    let mut basic_props = if let Some(delay_ms) = self.delay_ms {
-      let mut headers = FieldTable::default();
-      headers.insert("x-delay".into(), AMQPValue::LongInt(delay_ms));
-      BasicProperties::default().with_headers(headers)
-    } else {
-      BasicProperties::default()
-    };
+    let mut basic_props = BasicProperties::default();
 
     if persistent {
       basic_props = basic_props.with_delivery_mode(2);
     }
+
+    let exchange_name = if let Some(_) = self.delay_ms {
+      &Self::get_delay_exchange_name(exchange_name)
+    } else {
+      exchange_name
+    };
     
     // per message ttl. When both a per-queue and a per-message TTL are specified,
     // the lower value between the two will be chosen.
@@ -186,8 +198,8 @@ impl RetryProducer {
   fn get_retry_exchange_name(exchange_name: &str, count: u8,) -> String {
     format!("{}.dlx_retry_{}", exchange_name, count)
   }
-
-  fn get_wait_queue_name(queue_name: &str) -> String {
-    format!("{}.wait_retry", queue_name)
+  
+  fn get_delay_exchange_name(exchange_name: &str) -> String {
+    format!("{}.delay_ex", exchange_name)
   }
 }
