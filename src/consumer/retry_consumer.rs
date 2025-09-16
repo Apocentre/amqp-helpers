@@ -78,12 +78,12 @@ impl RetryConsumer {
             .get("count")
             .context("")?
             .as_long_long_int()
-            .unwrap_or(0)
+            .unwrap_or(1)
           )
         }
       }
     }
 
-    Ok(1)
+    Ok(0)
   }
 }
