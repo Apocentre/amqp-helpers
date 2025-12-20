@@ -2,7 +2,7 @@ use std::{
   marker::PhantomData, time::Instant, sync::Arc,
 };
 use eyre::Result;
-use log::trace;
+use log::{trace, error};
 use borsh::BorshDeserialize;
 use lapin::{
   message::Delivery, options::{BasicAckOptions, BasicNackOptions}, Error, Result as LapinResult
@@ -65,7 +65,7 @@ where
           let event = M::try_from_slice(&delivery.data).unwrap();
 
           let result = handler.handle(
-            event, 
+            event,
             &delivery,
             retry_count,
           ).await;
@@ -79,8 +79,8 @@ where
               .await
               .expect("ack");
             },
-            Err(error) => { 
-              trace!("Msg nacked {:?}", error);
+            Err(error) => {
+              error!("Msg nacked {:?}", error);
 
               delivery
               .nack(BasicNackOptions::default())
