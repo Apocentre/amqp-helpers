@@ -1,25 +1,31 @@
+use futures_lite::StreamExt;
 use lapin::{
-  Channel, Connection as LapinConnection, ConnectionProperties, Error
+  Channel, Connection as LapinConnection, ConnectionProperties, Error, Event
 };
 
 pub struct Connection(pub LapinConnection);
 
 impl Connection {
-  pub async fn new<E>(uri: &str, error_handler: Option<E>) -> Self
+  pub async fn new<E>(uri: &str, mut error_handler: Option<E>) -> Self
   where
     E: FnMut(Error) + Send + 'static
   {
     let options = ConnectionProperties::default()
-    // Use tokio executor and reactor.
-    // At the moment the reactor is only available for unix.
-    .with_executor(tokio_executor_trait::Tokio::current())
-    .with_reactor(tokio_reactor_trait::Tokio);
+    .enable_auto_recover()
+    .configure_backoff(|backoff| {
+      backoff.with_max_times(3);
+    });
 
     let connection = LapinConnection::connect(uri, options).await.expect("cannot connect to rabbitmq");
+    let mut events_listener = LapinConnection::events_listener(&connection);
 
-    if let Some(h) = error_handler {
-      connection.on_error(h);
-    }
+    tokio::spawn(async move {
+      while let Some(Event::Error(error)) = events_listener.next().await {
+        if let Some(ref mut h) = error_handler {
+          h(error);
+        }
+      }
+    });
 
     Self(connection)
   }

@@ -1,5 +1,5 @@
 use lapin::{
-  message::{BasicGetMessage, Delivery}, options::BasicGetOptions, Channel, Error
+  Channel, Error, message::{BasicGetMessage, Delivery}, options::BasicGetOptions, types::ShortString
 };
 use eyre::Result;
 use crate::core::connection::Connection;
@@ -15,7 +15,7 @@ pub struct NextItem {
 pub struct PullConsumer {
   channel: Channel,
   connection: Connection,
-  queue_name: String,
+  queue_name: ShortString,
 }
 
 impl PullConsumer {
@@ -23,19 +23,13 @@ impl PullConsumer {
     uri: &str,
     queue_name: &str,
     on_connection_error: Option<E>,
-    on_channel_error: Option<E>,
   ) -> Result<Self>
   where
     E: FnMut(Error) + Send + 'static
   {
     let connection = Connection::new(uri, on_connection_error).await;
     let channel = connection.create_channel().await;
-
-    if let Some(h) = on_channel_error {
-      channel.on_error(h);
-    }
-    
-    let queue_name = queue_name.to_owned();
+    let queue_name = queue_name.into();
 
     Ok(Self {
       connection,
@@ -51,9 +45,9 @@ impl PullConsumer {
 
     Ok(())
   }
-  
+
   pub async fn next(&self) -> Result<Option<NextItem>> {
-    let basic_get_result = self.channel.basic_get(&self.queue_name, BasicGetOptions {no_ack: false}).await?;
+    let basic_get_result = self.channel.basic_get(self.queue_name.clone(), BasicGetOptions {no_ack: false}).await?;
     let Some(BasicGetMessage {delivery, ..}) = basic_get_result else {return Ok(None)};
     let delivery = Ok(delivery);
     let retry_count = RetryConsumer::get_retry_count(&delivery)?;
@@ -62,7 +56,7 @@ impl PullConsumer {
       delivery: delivery?,
       retry_count
     };
-    
+
     Ok(Some(next_item))
   }
 

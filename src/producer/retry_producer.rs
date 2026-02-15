@@ -25,18 +25,12 @@ impl RetryProducer {
     ttl: u32,
     delay_ms: Option<u32>,
     on_connection_error: Option<E>,
-    on_channel_error: Option<E>,
   ) -> Result<Self>
   where
     E: FnMut(Error) + Send + 'static
   {
     let connection = Connection::new(uri, on_connection_error).await;
     let channel = connection.create_channel().await;
-
-    if let Some(h) = on_channel_error {
-      channel.on_error(h);
-    }
-
     let retry_1_exchange_name = Self::get_retry_exchange_name(exchange_name, 1);
     let retry_2_exchange_name = Self::get_retry_exchange_name(exchange_name, 2);
     let wait_queue_name = format!("{}.wait_retry", queue_name);
@@ -130,8 +124,8 @@ impl RetryProducer {
     }
 
     self.channel.basic_publish(
-      exchange_name,
-      routing_key,
+      exchange_name.into(),
+      routing_key.into(),
       BasicPublishOptions::default(),
       payload,
       basic_props,
@@ -149,7 +143,7 @@ impl RetryProducer {
     args: FieldTable,
   ) -> Result<()> {
     channel.exchange_declare(
-      exchange_name,
+      exchange_name.into(),
       exchange_kind,
       ExchangeDeclareOptions {
         passive: false, // TODO: what does this field mean?
@@ -170,7 +164,7 @@ impl RetryProducer {
     args: FieldTable,
   ) -> Result<Queue> {
     let queue = channel.queue_declare(
-      queue_name,
+      queue_name.into(),
       QueueDeclareOptions {
         passive: false, // TODO: what does this field mean?
         durable: true,
@@ -191,9 +185,9 @@ impl RetryProducer {
     routing_key: &str,
   ) -> Result<()> {
     channel.queue_bind(
-      queue_name,
-      exchange_name,
-      routing_key,
+      queue_name.into(),
+      exchange_name.into(),
+      routing_key.into(),
       QueueBindOptions {
         nowait: true,
       },

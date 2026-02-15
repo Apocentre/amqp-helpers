@@ -32,7 +32,6 @@ where
     prefetch_count: u16,
     handler: H,
     on_connection_error: Option<E>,
-    on_channel_error: Option<E>,
   ) -> Result<Self>
   where
     E: FnMut(Error) + Send + 'static
@@ -43,7 +42,6 @@ where
       &consumer_tag,
       prefetch_count,
       on_connection_error,
-      on_channel_error,
     ).await?;
 
     Ok(Self {

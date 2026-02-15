@@ -2,9 +2,9 @@ use std::future::Future;
 use futures_lite::stream::StreamExt;
 use eyre::{Result, ContextCompat};
 use lapin::{
-  message::Delivery, options::{
+  Consumer, Error, Result as LapinResult, message::Delivery, options::{
     BasicConsumeOptions, BasicQosOptions,
-  }, types::FieldTable, Consumer, Error, Result as LapinResult
+  }, types::FieldTable
 };
 use crate::core::{
   connection::Connection,
@@ -22,8 +22,7 @@ impl RetryConsumer {
     consumer_tag: &str,
     prefetch_count: u16,
     on_connection_error: Option<E>,
-    on_channel_error: Option<E>,
-  ) -> Result<Self> 
+  ) -> Result<Self>
   where
     E: FnMut(Error) + Send + 'static
   {
@@ -31,14 +30,10 @@ impl RetryConsumer {
     let channel = connection.create_channel().await;
     channel.basic_qos(prefetch_count, BasicQosOptions {global: false}).await?;
 
-    if let Some(h) = on_channel_error {
-      channel.on_error(h);
-    }
-
     let consumer = channel
     .basic_consume(
-      queue_name,
-      consumer_tag,
+      queue_name.into(),
+      consumer_tag.into(),
       BasicConsumeOptions::default(),
       FieldTable::default(),
     ).await.expect("cannot create consumer");

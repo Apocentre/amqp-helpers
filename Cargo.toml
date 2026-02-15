@@ -1,6 +1,6 @@
 [package]
 name = "amqp-helpers"
-version = "2.3.0"
+version = "3.0.0"
 edition = "2021"
 license = "BUSL-1.1"
 
@@ -11,7 +11,7 @@ async-trait = "0.1.88"
 borsh = "1.5.7"
 eyre = "0.6.12"
 futures-lite = "2.6.0"
-lapin = "3.0.0"
+lapin = "4.0.0"
 log = "0.4.27"
 tokio = "1.45.1"
 tokio-executor-trait = "2.1.3"
