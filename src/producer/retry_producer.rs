@@ -1,11 +1,14 @@
+use std::collections::BTreeMap;
 use eyre::Result;
 use lapin::{
   BasicProperties, Channel, Error, ExchangeKind, Queue, options::{
     BasicPublishOptions, ExchangeDeclareOptions, QueueBindOptions, QueueDeclareOptions
-  }, types::{FieldTable, LongString}
+  }, types::{AMQPValue, FieldTable, LongString, ShortString}
 };
 use crate::core::connection::Connection;
 
+// delivery_mode in AMQP determines if message will be stored on disk after broker restarts.
+const DURABLE_DELIVERY_MODE: u8 = 2;
 const ANY_MESSAGE: &str = "#";
 
 pub struct RetryProducer {
@@ -101,11 +104,16 @@ impl RetryProducer {
     payload: &[u8],
     persistent: bool,
     ttl: Option<u32>,
+    headers: Option<BTreeMap<ShortString, AMQPValue>>,
   ) -> Result<()> {
     let mut basic_props = BasicProperties::default();
 
     if persistent {
-      basic_props = basic_props.with_delivery_mode(2);
+      basic_props = basic_props.with_delivery_mode(DURABLE_DELIVERY_MODE);
+    }
+
+    if let Some(headers) = headers {
+      basic_props = basic_props.with_headers(FieldTable::from(headers));
     }
 
     let exchange_name = if let Some(_) = self.delay_ms {
@@ -113,7 +121,7 @@ impl RetryProducer {
     } else {
       exchange_name
     };
-    
+
     // per message ttl. When both a per-queue and a per-message TTL are specified,
     // the lower value between the two will be chosen.
     // https://www.rabbitmq.com/docs/ttl#per-message-ttl-in-publishers
@@ -198,7 +206,7 @@ impl RetryProducer {
   fn get_retry_exchange_name(exchange_name: &str, count: u8,) -> String {
     format!("{}.dlx_retry_{}", exchange_name, count)
   }
-  
+
   fn get_delay_exchange_name(exchange_name: &str) -> String {
     format!("{}.delay_ex", exchange_name)
   }
