@@ -1,14 +1,12 @@
 use lapin::{
-  Result,
-  message::{Delivery},
-  options::{BasicAckOptions, BasicNackOptions},
+  Error, Result, message::Delivery, options::BasicNackOptions,
 };
-use borsh::{BorshSerialize, BorshDeserialize};
 use amqp_helpers::{
   consumer::retry_consumer::RetryConsumer,
 };
+use serde::{Deserialize, Serialize};
 
-#[derive(BorshSerialize, BorshDeserialize, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub struct Message {
   pub name: String,
   pub age: u8,
@@ -22,12 +20,14 @@ async fn main() {
     uri,
     "example_queue",
     "basic_consumer",
-  ).await;
+    1,
+    Some(on_error)
+  ).await.unwrap();
 
   retry_consumer.consume(Box::new(move |delivery: Result<Delivery>, retry_count: i64| async move {
     if let Ok(delivery) = delivery {
       println!("Retry count {:?}", retry_count);
-      let msg = Message::try_from_slice(&delivery.data).unwrap();
+      let msg = bitcode::deserialize::<Message>(&delivery.data).unwrap();
       println!("{:?}", msg);
 
       delivery
@@ -37,4 +37,8 @@ async fn main() {
     }
   })).await.unwrap();
 
+}
+
+fn on_error(error: Error) {
+  println!("Error: {}", error);
 }

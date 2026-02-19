@@ -1,9 +1,10 @@
+use lapin::Error;
+use serde::{Deserialize, Serialize};
 use tokio::time::{sleep, Duration};
 use eyre::Result;
-use borsh::{BorshSerialize, BorshDeserialize};
 use amqp_helpers::producer::retry_producer::RetryProducer;
 
-#[derive(BorshSerialize, BorshDeserialize, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub struct Message {
   pub name: String,
   pub age: u8,
@@ -19,6 +20,7 @@ async fn main() -> Result<()> {
     "example_queue",
     "example.send",
     5_000, //  5 seconds
+    None, Some(on_error)
   ).await?;
 
   for i in 0..1 {
@@ -26,11 +28,16 @@ async fn main() -> Result<()> {
     producer.publish(
       "example_exchange",
       "example.send",
-      &msg.try_to_vec().unwrap()
+      &bitcode::serialize(&msg).unwrap(),
+      true, None, None,
     ).await?;
-    
+
     sleep(Duration::from_secs(2)).await;
   }
 
   Ok(())
+}
+
+fn on_error(error: Error) {
+  println!("Error: {}", error);
 }

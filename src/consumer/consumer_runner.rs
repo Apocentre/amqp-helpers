@@ -3,7 +3,7 @@ use std::{
 };
 use eyre::Result;
 use log::{trace, error};
-use borsh::BorshDeserialize;
+use serde::de::DeserializeOwned;
 use lapin::{
   message::Delivery, options::{BasicAckOptions, BasicNackOptions}, Error, Result as LapinResult
 };
@@ -12,7 +12,7 @@ use super::retry_consumer::RetryConsumer;
 
 pub struct ConsumerRunner<M, H>
 where
-  M: BorshDeserialize + Send + Sync,
+  M: DeserializeOwned + Send + Sync,
   H: Handler<M> + Send + Sync + 'static
 {
   retry_consumer: RetryConsumer,
@@ -22,7 +22,7 @@ where
 
 impl <M, H> ConsumerRunner<M, H>
 where
-  M: BorshDeserialize  + Send + Sync,
+  M: DeserializeOwned  + Send + Sync,
   H: Handler<M> + Send + Sync + 'static
 {
   pub async fn new<E>(
@@ -60,7 +60,10 @@ where
       async move {
         if let Ok(delivery) = delivery {
           let start = Instant::now();
-          let event = M::try_from_slice(&delivery.data).unwrap();
+          let Ok(event) = bitcode::deserialize::<M>(&delivery.data) else {
+            error!("Failed to deserialize message");
+            return
+          };
 
           let result = handler.handle(
             event,
