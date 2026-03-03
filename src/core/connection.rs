@@ -13,7 +13,7 @@ impl Connection {
     let options = ConnectionProperties::default()
     .enable_auto_recover()
     .configure_backoff(|backoff| {
-      backoff.with_max_times(3);
+      backoff.with_max_times(3)
     });
 
     let connection = LapinConnection::connect(uri, options).await.expect("cannot connect to rabbitmq");

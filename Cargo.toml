@@ -1,18 +1,18 @@
 [package]
 name = "amqp-helpers"
-version = "3.1.0"
+version = "3.2.0"
 edition = "2021"
 license = "BUSL-1.1"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-async-trait = "0.1.88"
+async-trait = "0.1.89"
 eyre = "0.6.12"
 bitcode = { version = "0.6.9", features = ["serde"] }
 serde = "1"
 futures-lite = "2.6.0"
-lapin = "4.0.0"
+lapin = "4.1.0"
 log = "0.4.27"
 tokio = "1.45.1"
 tokio-executor-trait = "2.1.3"
