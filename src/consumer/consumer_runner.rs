@@ -62,6 +62,13 @@ where
           let start = Instant::now();
           let Ok(event) = bitcode::deserialize::<M>(&delivery.data) else {
             error!("Failed to deserialize message");
+
+            // nack so the message doesn't stay unacked on the channel until the channel closes.
+            delivery
+            .ack(BasicAckOptions::default())
+            .await
+            .expect("ack");
+
             return
           };
 
