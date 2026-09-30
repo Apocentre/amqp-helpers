@@ -60,16 +60,19 @@ where
       async move {
         if let Ok(delivery) = delivery {
           let start = Instant::now();
-          let Ok(event) = bitcode::deserialize::<M>(&delivery.data) else {
-            error!("Failed to deserialize message");
+          let event = match bitcode::deserialize::<M>(&delivery.data) {
+            Ok(event) => event,
+            Err(error) => {
+              error!("Failed to deserialize message (delivery_tag: {}): {:?}", delivery.delivery_tag, error);
 
-            // nack so the message doesn't stay unacked on the channel until the channel closes.
-            delivery
-            .ack(BasicAckOptions::default())
-            .await
-            .expect("ack");
+              // ack so the message doesn't stay unacked on the channel until the channel closes.
+              delivery
+              .ack(BasicAckOptions::default())
+              .await
+              .expect("ack");
 
-            return
+              return
+            }
           };
 
           let result = handler.handle(
