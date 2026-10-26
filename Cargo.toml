@@ -2,7 +2,7 @@
 name = "amqp-helpers"
 version = "3.2.3"
 edition = "2021"
-license = "BUSL-1.1"
+license = "MIT"
 description = "Thin helpers on top of lapin: RabbitMQ producer and consumers with a broker-side retry mechanism (dead-letter exchanges and TTLs)"
 readme = "README.md"
 repository = "https://github.com/Apocentre/amqp-helpers"

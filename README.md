@@ -313,4 +313,4 @@ Connecting or creating a channel fails with a panic (`expect`), not a `Result`.
 
 ## License
 
-BUSL-1.1, see `LICENSE`.
+MIT, see `LICENSE`.
