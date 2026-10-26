@@ -26,7 +26,6 @@ async fn main() -> Result<()> {
   for i in 0..1 {
     let msg = Message { name: format!("Name {}", i), age: i };
     producer.publish(
-      "example_exchange",
       "example.send",
       &bitcode::serialize(&msg).unwrap(),
       true, None, None,

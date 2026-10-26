@@ -32,7 +32,7 @@ async fn publish_to_a_bound_routing_key_is_confirmed() {
   let routing_key = format!("{name}.new");
   let producer = new_producer(&name, &routing_key, Some(1_000)).await;
 
-  producer.publish(&name, &routing_key, b"payload", true, Some(500), None).await.unwrap();
+  producer.publish(&routing_key, b"payload", true, Some(500), None).await.unwrap();
 }
 
 #[tokio::test]
@@ -42,7 +42,7 @@ async fn publish_to_an_unbound_routing_key_fails_instead_of_being_dropped() {
   let routing_key = format!("{name}.new");
   let producer = new_producer(&name, &routing_key, Some(1_000)).await;
 
-  let result = producer.publish(&name, "some.other.key", b"payload", true, None, None).await;
+  let result = producer.publish("some.other.key", b"payload", true, None, None).await;
 
   assert!(result.unwrap_err().to_string().contains("unroutable"));
 }

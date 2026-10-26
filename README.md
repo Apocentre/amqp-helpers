@@ -50,8 +50,8 @@ cargo run --example consumer
 The example consumer nacks every message, so you will see it come back every 5 seconds with an increasing
 retry count. The management UI is at <http://localhost:15672> (`user` / `password`).
 
-> **The consumer never declares anything.** It only calls `basic.consume` on an existing queue and panics
-> (`cannot create consumer`) if the queue is missing. `RetryProducer::new` must have run at least once
+> **The consumer never declares anything.** It only calls `basic.consume` on an existing queue and returns an
+> error (`cannot create consumer ...`) if the queue is missing. `RetryProducer::new` must have run at least once
 > (from any process) before a consumer starts.
 
 ## Topology
@@ -163,7 +163,8 @@ array. After a full cycle the front entry is `{ queue: "Q.wait_retry", reason: "
 `n` is the number of times the message has gone around the loop.
 
 `RetryConsumer::get_retry_count` reads `x-death[0].count` and returns it (or `0` when there is no `x-death`
-header, i.e. the first delivery). This number is what you receive as the `retry_count` argument in
+header, i.e. the first delivery). A malformed `x-death` header (which any publisher can set) never fails or
+panics the consumer: it is logged and counted as `1`. This number is what you receive as the `retry_count` argument in
 `RetryConsumer::consume`, `Handler::handle`, and `PullConsumer::next`.
 
 | Delivery | `x-death` header | `retry_count` |
@@ -174,8 +175,12 @@ header, i.e. the first delivery). This number is what you receive as the `retry_
 
 ### Stopping retries
 
-There is **no built-in maximum**. A message that is nacked is retried forever. You decide when to stop by
-looking at `retry_count` in your handler, for example:
+By default there is **no maximum**: a message that is nacked is retried forever. With `ConsumerRunner` you can
+set one with `with_max_retries(n)`: once `handle` fails for a delivery whose `retry_count >= n`,
+`Handler::on_retries_exhausted` is called (it logs by default) and, unless it returns an error, the message is
+acked, which ends the cycle. Override the hook to park the message somewhere (e.g. a dead-letter queue) first.
+
+With `RetryConsumer` or `PullConsumer` you look at `retry_count` yourself, for example:
 
 ```rust
 if retry_count >= 5 {
@@ -207,8 +212,7 @@ let producer = RetryProducer::new(
 ).await?;
 
 producer.publish(
-    "example_exchange",   // exchange (rewritten to E.delay_ex when delay is enabled)
-    "example.send",       // routing key
+    "example.send",       // routing key. Published to E, or to E.delay_ex when delay is enabled
     &payload,             // bytes
     true,                 // persistent (delivery_mode = 2, survives a broker restart)
     None,                 // per-message TTL in ms (AMQP `expiration`)
@@ -218,7 +222,8 @@ producer.publish(
 
 `new` opens a connection and a channel, then declares everything described in [Topology](#topology).
 Declaring is idempotent as long as the arguments match what already exists, so calling `new` from many
-services is fine. `publish` sets `delivery_mode = 2` when `persistent` is true, adds custom headers, adds the
+services is fine. Declarations wait for the broker's reply, so a conflict with an existing queue or exchange
+(`PRECONDITION_FAILED`) is returned from `new` as an error. `publish` always targets the exchange given to `new`. `publish` sets `delivery_mode = 2` when `persistent` is true, adds custom headers, adds the
 `expiration` property if a TTL is given, publishes with the `mandatory` flag, and awaits the publisher confirm.
 `publish` returns an error if the broker nacks the message or returns it as unroutable. `new` enables
 publisher confirms on the channel (`confirm_select`).
@@ -230,20 +235,23 @@ publisher confirms on the channel (`confirm_select`).
 Opens a connection and channel, sets `basic.qos` with the given `prefetch_count` (per consumer, not global),
 and starts a `basic.consume` with manual acknowledgements (`no_ack = false`).
 
-`consume` takes a closure `FnMut(lapin::Result<Delivery>, i64) -> Future<Output = ()>` called with each delivery
+`consume` takes a closure `FnMut(Delivery, i64) -> Future<Output = eyre::Result<()>>` called with each delivery
 and its retry count. **The closure is responsible for acking or nacking.** Deliveries are processed one at a
 time (the next one is not pulled from the stream until the closure's future completes); `prefetch_count` only
 controls how many unacked messages the broker pushes ahead of time.
 
+`consume` **only ever returns an error**: there is no graceful stop, so the stream ending (consumer cancelled,
+channel or connection closed), a delivery error, or an `Err` returned by your closure all end the loop. Treat a
+return as a failure and restart the consumer.
+
 ```rust
 let mut consumer = RetryConsumer::new(uri, "example_queue", "basic_consumer", 1, Some(on_error)).await?;
 
-consumer.consume(Box::new(|delivery, retry_count| async move {
-    if let Ok(delivery) = delivery {
-        // ... process ...
-        delivery.nack(BasicNackOptions::default()).await.unwrap(); // -> retry cycle
-    }
-})).await?;
+let error = consumer.consume(Box::new(|delivery, retry_count| async move {
+    // ... process ...
+    delivery.nack(BasicNackOptions::default()).await?; // -> retry cycle
+    Ok(())
+})).await.unwrap_err();
 ```
 
 ### `ConsumerRunner<M, H>` (push, typed)
@@ -257,16 +265,25 @@ impl Handler<MyMessage> for MyHandler {
 }
 
 ConsumerRunner::new(uri, queue, consumer_tag, prefetch, MyHandler, Some(on_error)).await?
+    .with_max_retries(5)    // optional, see "Stopping retries"
     .start().await?;
 ```
+
+`start` has the same contract as `RetryConsumer::consume`: it only returns an error, including when an ack or
+nack cannot be sent.
 
 For every delivery the runner does the following:
 
 ![ConsumerRunner ack/nack decision flow](docs/diagrams/consumer-runner.png)
 
-- **Undeserializable messages are acked and dropped**, not retried. Retrying could never succeed, and leaving
-  them unacked would pin them to the channel until it closes.
-- **`Ok(())` acks, `Err(_)` nacks** and therefore triggers a retry through the topology above.
+- **Undeserializable messages are not retried** (retrying could never succeed). `Handler::on_undeserializable`
+  is called; by default it logs and returns `Ok(())`, so the message is acked and dropped. Override it to park
+  the message first. Returning `Err(_)` nacks it instead.
+- **`Ok(())` acks, `Err(_)` nacks** and therefore triggers a retry through the topology above. With
+  `with_max_retries(n)`, a failure at `retry_count >= n` calls `Handler::on_retries_exhausted` instead (same
+  contract as above).
+- If lapin reports an ack/nack as not applied (the delivery belongs to a channel replaced by a connection
+  recovery), a warning is logged and the broker redelivers the message, so handlers should tolerate duplicates.
 - `ConsumerRunner` shares the handler through an `Arc`, so `handle` takes `&self`.
 
 ### `PullConsumer` (`basic.get`)
@@ -284,20 +301,28 @@ acknowledged.
 `core::connection::Connection` wraps a lapin connection with:
 
 - automatic recovery (`enable_auto_recover`) with a backoff capped at 3 attempts;
-- a spawned task that listens for connection error events and forwards them to your `on_connection_error`
-  callback (`Option<FnMut(lapin::Error) + Send + 'static>`).
+- a spawned task that listens for connection events for the lifetime of the connection. Every event is logged,
+  and errors are also forwarded to your `on_connection_error` callback
+  (`Option<FnMut(lapin::Error) + Send + 'static>`).
 
-Connecting or creating a channel fails with a panic (`expect`), not a `Result`.
+Connecting or creating a channel returns an error (without the URI, which usually contains credentials).
+Use an `amqps://` URI to encrypt the connection (TLS via rustls is enabled by lapin's default features) and
+load credentials from the environment or a secret store rather than hard-coding them; the `user:password`
+URIs in the examples are for a local development broker only.
+
+The library logs through the [`log`](https://crates.io/crates/log) facade; install a logger to see it.
 
 ## Caveats
 
 - **Queue arguments are immutable.** Changing `ttl`, `delay_ms` or the DLX of an already-declared queue makes
-  the broker reject the declare with `PRECONDITION_FAILED`. Because declarations use `nowait`, this shows up as
-  an asynchronous channel error. Use a new queue name (or delete the old queue) when changing them.
+  the broker reject the declare with `PRECONDITION_FAILED`, which `RetryProducer::new` returns as an error.
+  Use a new queue name (or delete the old queue) when changing them.
 - **Retry count with `delay_ms`.** A message coming out of `Q.entry_delay` already has an `x-death` entry
   (`{Q.entry_delay, expired, 1}`), so `get_retry_count` reports `1` on the very first delivery and the
   sequence becomes 1, 1, 2, 3, ... Treat `retry_count` as "number of dead-letter hops" in that mode.
-- **Unlimited retries** unless your handler stops them, see [Stopping retries](#stopping-retries).
+- **Unlimited retries** unless you stop them, see [Stopping retries](#stopping-retries).
+- **No payload size limit** is applied by this library; `ConsumerRunner` deserializes whatever the broker
+  delivers. Configure the broker's `max_message_size` if producers are not trusted.
 - **Exchanges are declared `auto_delete`.** RabbitMQ deletes an auto-delete exchange once its last binding is
   removed.
 - **Unroutable publishes fail.** With `delay_ms` set, `E.delay_ex` is a direct exchange bound with the single

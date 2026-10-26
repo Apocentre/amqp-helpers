@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use eyre::{Result, bail};
+use log::{debug, error, info, trace};
 use lapin::{
   BasicProperties, Channel, Error, ExchangeKind, Queue, options::{
     BasicPublishOptions, ConfirmSelectOptions, ExchangeDeclareOptions, QueueBindOptions, QueueDeclareOptions
@@ -13,6 +14,8 @@ const ANY_MESSAGE: &str = "#";
 
 pub struct RetryProducer {
   channel: Channel,
+  // `publish` always targets the exchange this producer declared the topology for
+  exchange_name: String,
   delay_ms: Option<u32>,
 }
 
@@ -29,8 +32,10 @@ impl RetryProducer {
   where
     E: FnMut(Error) + Send + 'static
   {
-    let connection = Connection::new(uri, on_connection_error).await;
-    let channel = connection.create_channel().await;
+    let connection = Connection::new(uri, on_connection_error).await?;
+    let channel = connection.create_channel().await?;
+
+    debug!("Declaring retry topology for exchange {} and queue {}", exchange_name, queue_name);
 
     // make the broker acknowledge every publish so `publish` can tell whether it took ownership of the message
     channel.confirm_select(ConfirmSelectOptions::default()).await?;
@@ -92,12 +97,14 @@ impl RetryProducer {
     // finally, bind the wait queue to the retry DLX where messages that are rejected are sent back to the main queue
     Self::queue_bind(&channel, &retry_1_exchange_name, &wait_queue_name, ANY_MESSAGE).await?;
 
-    Ok(Self {channel, delay_ms})
+    info!("Declared retry topology for exchange {} and queue {} (delay_ms: {:?})", exchange_name, queue_name, delay_ms);
+
+    Ok(Self {channel, exchange_name: exchange_name.to_string(), delay_ms})
   }
 
+  /// Publishes to the exchange given to `new` (or to its delay exchange when `delay_ms` was set).
   pub async fn publish(
     &self,
-    exchange_name: &str,
     routing_key: &str,
     payload: &[u8],
     persistent: bool,
@@ -114,10 +121,10 @@ impl RetryProducer {
       basic_props = basic_props.with_headers(FieldTable::from(headers));
     }
 
-    let exchange_name = if let Some(_) = self.delay_ms {
-      &Self::get_delay_exchange_name(exchange_name)
+    let exchange_name = if self.delay_ms.is_some() {
+      Self::get_delay_exchange_name(&self.exchange_name)
     } else {
-      exchange_name
+      self.exchange_name.clone()
     };
 
     // per message ttl. When both a per-queue and a per-message TTL are specified,
@@ -127,8 +134,10 @@ impl RetryProducer {
       basic_props = basic_props.with_expiration(ttl.to_string().into());
     }
 
+    trace!("Publishing {} bytes to {} with routing key {}", payload.len(), exchange_name, routing_key);
+
     let confirmation = self.channel.basic_publish(
-      exchange_name.into(),
+      exchange_name.as_str().into(),
       routing_key.into(),
       // mandatory: the broker returns the message instead of silently dropping it when no queue is bound
       BasicPublishOptions {mandatory: true, ..BasicPublishOptions::default()},
@@ -139,16 +148,25 @@ impl RetryProducer {
     .await?;
 
     if confirmation.is_nack() {
+      error!("Broker nacked the message published to {} with routing key {}", exchange_name, routing_key);
+
       bail!("broker nacked the message published to {exchange_name} with routing key {routing_key}");
     }
 
     if let Some(returned) = confirmation.take_message() {
+      error!(
+        "Message published to {} with routing key {} is unroutable: {} {}",
+        exchange_name, routing_key, returned.reply_code, returned.reply_text,
+      );
+
       bail!(
         "message published to {exchange_name} with routing key {routing_key} is unroutable: {} {}",
         returned.reply_code,
         returned.reply_text,
       );
     }
+
+    trace!("Message published to {} with routing key {} was confirmed", exchange_name, routing_key);
 
     Ok(())
   }
@@ -163,11 +181,13 @@ impl RetryProducer {
       exchange_name.into(),
       exchange_kind,
       ExchangeDeclareOptions {
-        passive: false, // TODO: what does this field mean?
+        passive: false, // false: create the exchange if missing instead of only checking that it exists
         durable: true,
         auto_delete: true,
         internal: false,
-        nowait: true, // TODO: what does this field mean?
+        // false: wait for the broker's reply so a failed declare (e.g. PRECONDITION_FAILED when the arguments
+        // differ from the existing exchange) is returned here instead of asynchronously closing the channel
+        nowait: false,
       },
       args,
     ).await?;
@@ -183,11 +203,11 @@ impl RetryProducer {
     let queue = channel.queue_declare(
       queue_name.into(),
       QueueDeclareOptions {
-        passive: false, // TODO: what does this field mean?
+        passive: false, // false: create the queue if missing instead of only checking that it exists
         durable: true,
         auto_delete: false,
         exclusive: false,
-        nowait: true, // TODO: what does this field mean?
+        nowait: false, // see create_exchange
       },
       args,
     ).await?;
@@ -206,7 +226,7 @@ impl RetryProducer {
       exchange_name.into(),
       routing_key.into(),
       QueueBindOptions {
-        nowait: true,
+        nowait: false, // see create_exchange
       },
       FieldTable::default(),
     ).await?;
