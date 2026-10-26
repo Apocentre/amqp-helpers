@@ -1,0 +1,16 @@
+flowchart LR
+    subgraph T1 ["delay_ms (optional, per-queue TTL on Q.entry_delay)"]
+        direction LR
+        a1([publish]) --> a2[Q.entry_delay]
+        a2 -- "after delay_ms" --> a3([E → Q])
+    end
+    subgraph T2 ["ttl (per-queue TTL on Q.wait_retry)"]
+        direction LR
+        b1([nack]) --> b2[Q.wait_retry]
+        b2 -- "after ttl" --> b3([back on Q])
+    end
+    subgraph T3 ["publish ttl (per-message TTL)"]
+        direction LR
+        c1([publish with expiration]) --> c2["first queue (Q or Q.entry_delay)"]
+        c2 -- "after expiration if not consumed" --> c3([dead-lettered])
+    end

@@ -1,0 +1,27 @@
+flowchart TB
+    P([Producer])
+    C([Consumer])
+
+    subgraph optional ["only if delay_ms is set"]
+        DX{{"E.delay_ex<br/>direct"}}
+        DQ[("Q.entry_delay<br/>x-message-ttl = delay_ms<br/>DLX = E")]
+        DX -- "routing_key" --> DQ
+    end
+
+    E{{"E<br/>topic"}}
+    Q[("Q<br/>DLX = E.dlx_retry_1")]
+    R1{{"E.dlx_retry_1<br/>topic"}}
+    W[("Q.wait_retry<br/>x-message-ttl = ttl<br/>DLX = E.dlx_retry_2")]
+    R2{{"E.dlx_retry_2<br/>topic"}}
+
+    P -- "publish (no delay)" --> E
+    P -. "publish (delay enabled)" .-> DX
+    DQ -- "expired after delay_ms" --> E
+
+    E -- "#" --> Q
+    Q -- "deliver" --> C
+
+    Q -- "nack / reject (dead-letter)" --> R1
+    R1 -- "#" --> W
+    W -- "expired after ttl (dead-letter)" --> R2
+    R2 -- "#" --> Q

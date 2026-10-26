@@ -1,0 +1,6 @@
+flowchart TD
+    D([delivery from Q]) --> X{"bitcode::deserialize::&lt;M&gt;"}
+    X -- "Err" --> L["log error + delivery_tag"] --> A1["ack<br/>(dropped, not retried)"]
+    X -- "Ok" --> H["handler.handle(model, &delivery, retry_count)"]
+    H -- "Ok(())" --> A2["ack"]
+    H -- "Err(_)" --> N["nack (requeue = false)<br/>enters retry cycle"]

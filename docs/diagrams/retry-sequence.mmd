@@ -1,0 +1,23 @@
+sequenceDiagram
+    autonumber
+    participant P as Producer
+    participant E as E (topic)
+    participant Q as Q
+    participant C as Consumer
+    participant R1 as E.dlx_retry_1
+    participant W as Q.wait_retry (TTL = ttl)
+    participant R2 as E.dlx_retry_2
+
+    P->>E: publish(routing_key)
+    E->>Q: bound with #35;
+    Q->>C: deliver (retry_count = 0)
+    C-->>Q: nack (requeue = false)
+    Note over Q,R1: Q has x-dead-letter-exchange = E.dlx_retry_1
+    Q->>R1: dead-letter (reason: rejected)
+    R1->>W: bound with #35;
+    Note over W: waits ttl ms,<br/>nobody consumes
+    W->>R2: expired, dead-letter (reason: expired)
+    R2->>Q: bound with #35;
+    Q->>C: deliver again (retry_count = 1)
+    C-->>Q: ack
+    Note over Q: message is gone,<br/>retry cycle ends
