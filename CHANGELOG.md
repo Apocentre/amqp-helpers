@@ -1,5 +1,12 @@
 # Changelog
 
+## 4.2.1 (2026-10-26)
+
+### Added
+
+- `backon` is re-exported as `amqp_helpers::backon`, so `ReconnectingProducer::with_backoff` can be used without
+  depending on `backon` directly.
+
 ## 4.2.0 (2026-10-26)
 
 ### Added

@@ -259,9 +259,12 @@ retrying because a new connection would be rejected the same way.
 
 Retrying is bounded by a [`backon`](https://docs.rs/backon) `ExponentialBuilder`. By default a publish is retried
 up to 4 times, with a jittered delay that starts at 100 milliseconds and is capped at 5 seconds, and at most 30
-seconds of sleeping in total. Change it with `with_backoff`; the last error is returned once a limit is hit:
+seconds of sleeping in total. Change it with `with_backoff`; the last error is returned once a limit is hit.
+`backon` is re-exported as `amqp_helpers::backon`, so you don't need to depend on it yourself:
 
 ```rust
+use amqp_helpers::backon::ExponentialBuilder;
+
 let producer = producer.with_backoff(
     ExponentialBuilder::default()
         .with_jitter()
