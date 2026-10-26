@@ -20,6 +20,7 @@ is parked in a *wait queue* for a while and is then automatically put back on th
 | Module | Type | Purpose |
 |---|---|---|
 | `producer::retry_producer` | `RetryProducer` | Declares the whole exchange/queue topology and publishes messages |
+| `producer::reconnecting_producer` | `ReconnectingProducer` | `RetryProducer` that reconnects itself when the connection breaks |
 | `consumer::retry_consumer` | `RetryConsumer` | Push consumer (`basic.consume`) that hands each delivery plus its retry count to a closure |
 | `consumer::consumer_runner` | `ConsumerRunner<M, H>` | Typed wrapper around `RetryConsumer`: deserializes the payload, calls your `Handler`, acks/nacks for you |
 | `consumer::pull_consumer` | `PullConsumer` | Pull consumer (`basic.get`) that returns the next delivery plus its retry count |
@@ -227,6 +228,37 @@ services is fine. Declarations wait for the broker's reply, so a conflict with a
 `expiration` property if a TTL is given, publishes with the `mandatory` flag, and awaits the publisher confirm.
 `publish` returns an error if the broker nacks the message or returns it as unroutable. `new` enables
 publisher confirms on the channel (`confirm_select`).
+
+### `ReconnectingProducer`
+
+`RetryProducer` is bound to the connection it was created with: once that connection is gone every publish
+fails and you have to build a new producer yourself. `ReconnectingProducer` does that for you:
+
+```rust
+let producer = Arc::new(ReconnectingProducer::new(
+    "amqp://user:password@localhost:5672",
+    "example_exchange",
+    "example_queue",
+    "example.send",
+    5_000,
+    None,
+    Some(on_error),       // Fn(lapin::Error) + Send + Sync, called on connection errors, including after reconnects
+).await?
+.with_publish_timeout(Duration::from_secs(5)));
+
+producer.publish("example.send", &payload, true, None, None).await?;
+```
+
+`publish` takes the same arguments as `RetryProducer::publish` and `&self`, so a single `Arc<ReconnectingProducer>`
+can be shared between tasks with no extra locking. If a publish fails with anything other than a broker
+rejection (`PublishRejected`: nack or unroutable), or does not finish within the publish timeout (10 seconds by
+default), the producer opens a new connection, re-declares the topology, closes the old connection in the
+background, and publishes the message once more. Concurrent failures share a single reconnect. If reconnecting
+fails the error is returned and the next `publish` tries again. A broker rejection is returned without
+reconnecting because a new connection would be rejected the same way.
+
+Delivery is at-least-once: when the connection drops or the publish times out after the broker took the message
+but before the confirm arrived, the retry publishes a duplicate.
 
 ## Consumers
 
