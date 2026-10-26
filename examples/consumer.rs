@@ -1,5 +1,5 @@
 use lapin::{
-  Error, Result, message::Delivery, options::BasicNackOptions,
+  Error, message::Delivery, options::BasicNackOptions,
 };
 use amqp_helpers::{
   consumer::retry_consumer::RetryConsumer,
@@ -24,19 +24,18 @@ async fn main() {
     Some(on_error)
   ).await.unwrap();
 
-  retry_consumer.consume(Box::new(move |delivery: Result<Delivery>, retry_count: i64| async move {
-    if let Ok(delivery) = delivery {
-      println!("Retry count {:?}", retry_count);
-      let msg = bitcode::deserialize::<Message>(&delivery.data).unwrap();
-      println!("{:?}", msg);
+  // `consume` only returns when the consumer stopped (cancelled, connection closed, or the handler failed)
+  let error = retry_consumer.consume(Box::new(move |delivery: Delivery, retry_count: i64| async move {
+    println!("Retry count {:?}", retry_count);
+    let msg = bitcode::deserialize::<Message>(&delivery.data)?;
+    println!("{:?}", msg);
 
-      delivery
-        .nack(BasicNackOptions::default())
-        .await
-        .expect("Failed to ack send_webhook_event message");
-    }
-  })).await.unwrap();
+    delivery.nack(BasicNackOptions::default()).await?;
 
+    Ok(())
+  })).await.unwrap_err();
+
+  println!("Consumer stopped: {:?}", error);
 }
 
 fn on_error(error: Error) {
