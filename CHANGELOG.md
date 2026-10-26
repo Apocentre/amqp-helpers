@@ -1,5 +1,22 @@
 # Changelog
 
+## 4.1.0 (2026-10-26)
+
+### Added
+
+- `ReconnectingProducer`: a `RetryProducer` that replaces its own connection when a publish fails because of it
+  (a lapin error or a timeout). `publish` takes `&self`, holds no lock while talking to the broker, shares one
+  reconnect between concurrent failures and retries the publish once on the new connection. Failed connects are
+  returned as errors, never panics. Broker rejections are returned as-is without reconnecting.
+- `PublishRejected`: the typed error `RetryProducer::publish` returns when the broker nacks a message or returns
+  it as unroutable. Its message text is unchanged; downcast the `eyre::Report` to tell it apart from connection
+  errors.
+- `RetryProducer::is_connected` and `RetryProducer::close`.
+
+### Changed
+
+- `tokio` now needs the `sync` and `time` features.
+
 ## 4.0.0 (2026-10-26)
 
 ### Breaking changes

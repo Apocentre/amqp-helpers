@@ -1,6 +1,6 @@
 [package]
 name = "amqp-helpers"
-version = "4.0.0"
+version = "4.1.0"
 edition = "2021"
 license = "MIT"
 description = "Thin helpers on top of lapin: RabbitMQ producer and consumers with a broker-side retry mechanism (dead-letter exchanges and TTLs)"
@@ -20,7 +20,7 @@ serde = "1"
 futures-lite = "2.6.0"
 lapin = "4.12.3"
 log = "0.4.27"
-tokio = { version = "1.45.1", features = ["rt"] }
+tokio = { version = "1.45.1", features = ["rt", "sync", "time"] }
 
 [dev-dependencies]
 serde = { version = "1", features = ["derive"] }

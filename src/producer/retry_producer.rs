@@ -1,5 +1,5 @@
-use std::collections::BTreeMap;
-use eyre::{Result, bail};
+use std::{collections::BTreeMap, fmt};
+use eyre::Result;
 use log::{debug, error, info, trace};
 use lapin::{
   BasicProperties, Channel, Error, ExchangeKind, Queue, options::{
@@ -12,7 +12,36 @@ use crate::core::connection::Connection;
 const DURABLE_DELIVERY_MODE: u8 = 2;
 const ANY_MESSAGE: &str = "#";
 
+/// The broker received the message but refused it. The connection is healthy, so reconnecting does not help.
+#[derive(Debug)]
+pub enum PublishRejected {
+  /// The broker nacked the message.
+  Nacked {exchange_name: String, routing_key: String},
+  /// No queue is bound for the routing key, so the broker returned the message.
+  Unroutable {exchange_name: String, routing_key: String, reply_code: u16, reply_text: String},
+}
+
+impl fmt::Display for PublishRejected {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    match self {
+      Self::Nacked {exchange_name, routing_key} => {
+        write!(f, "broker nacked the message published to {exchange_name} with routing key {routing_key}")
+      }
+      Self::Unroutable {exchange_name, routing_key, reply_code, reply_text} => {
+        write!(
+          f,
+          "message published to {exchange_name} with routing key {routing_key} is unroutable: {reply_code} {reply_text}",
+        )
+      }
+    }
+  }
+}
+
+impl std::error::Error for PublishRejected {}
+
 pub struct RetryProducer {
+  // kept so `close` can shut the connection down; lapin does not close it when the handle is dropped
+  connection: Connection,
   channel: Channel,
   // `publish` always targets the exchange this producer declared the topology for
   exchange_name: String,
@@ -99,7 +128,7 @@ impl RetryProducer {
 
     info!("Declared retry topology for exchange {} and queue {} (delay_ms: {:?})", exchange_name, queue_name, delay_ms);
 
-    Ok(Self {channel, exchange_name: exchange_name.to_string(), delay_ms})
+    Ok(Self {connection, channel, exchange_name: exchange_name.to_string(), delay_ms})
   }
 
   /// Publishes to the exchange given to `new` (or to its delay exchange when `delay_ms` was set).
@@ -150,7 +179,7 @@ impl RetryProducer {
     if confirmation.is_nack() {
       error!("Broker nacked the message published to {} with routing key {}", exchange_name, routing_key);
 
-      bail!("broker nacked the message published to {exchange_name} with routing key {routing_key}");
+      return Err(PublishRejected::Nacked {exchange_name, routing_key: routing_key.to_string()}.into());
     }
 
     if let Some(returned) = confirmation.take_message() {
@@ -159,14 +188,27 @@ impl RetryProducer {
         exchange_name, routing_key, returned.reply_code, returned.reply_text,
       );
 
-      bail!(
-        "message published to {exchange_name} with routing key {routing_key} is unroutable: {} {}",
-        returned.reply_code,
-        returned.reply_text,
-      );
+      return Err(PublishRejected::Unroutable {
+        exchange_name,
+        routing_key: routing_key.to_string(),
+        reply_code: returned.reply_code,
+        reply_text: returned.reply_text.to_string(),
+      }.into());
     }
 
     trace!("Message published to {} with routing key {} was confirmed", exchange_name, routing_key);
+
+    Ok(())
+  }
+
+  /// Whether the channel is still usable.
+  pub fn is_connected(&self) -> bool {
+    self.channel.status().connected()
+  }
+
+  /// Closes the connection (and with it the channel). Publishing afterwards fails.
+  pub async fn close(&self) -> Result<()> {
+    self.connection.0.close(200, "closing".into()).await?;
 
     Ok(())
   }
