@@ -219,7 +219,9 @@ producer.publish(
 `new` opens a connection and a channel, then declares everything described in [Topology](#topology).
 Declaring is idempotent as long as the arguments match what already exists, so calling `new` from many
 services is fine. `publish` sets `delivery_mode = 2` when `persistent` is true, adds custom headers, adds the
-`expiration` property if a TTL is given, publishes, and awaits the publisher-confirm future.
+`expiration` property if a TTL is given, publishes with the `mandatory` flag, and awaits the publisher confirm.
+`publish` returns an error if the broker nacks the message or returns it as unroutable. `new` enables
+publisher confirms on the channel (`confirm_select`).
 
 ## Consumers
 
@@ -298,12 +300,14 @@ Connecting or creating a channel fails with a panic (`expect`), not a `Result`.
 - **Unlimited retries** unless your handler stops them, see [Stopping retries](#stopping-retries).
 - **Exchanges are declared `auto_delete`.** RabbitMQ deletes an auto-delete exchange once its last binding is
   removed.
-- **Unroutable publishes are dropped silently.** With `delay_ms` set, `E.delay_ex` is a direct exchange bound
-  with the single `routing_key` given to `new`; publishing with any other routing key matches no binding and the
-  message is lost (the `mandatory` flag is not set). Without a delay, `E` is bound to `Q` with `#`, so every
-  routing key reaches `Q`.
-- **Publisher confirms are not enabled** on the channel (`confirm_select` is never called), so awaiting the
-  publish future does not guarantee that the broker has persisted the message.
+- **Unroutable publishes fail.** With `delay_ms` set, `E.delay_ex` is a direct exchange bound with the single
+  `routing_key` given to `new`; publishing with any other routing key matches no binding. Because `publish` sets
+  the `mandatory` flag, the broker returns the message and `publish` returns an error instead of dropping it.
+  Without a delay, `E` is bound to `Q` with `#`, so every routing key reaches `Q`.
+- **Publisher confirms are enabled** on the channel, so `publish` only returns `Ok` after the broker has taken
+  ownership of the message (for a persistent message on a durable queue, after it is written to disk). A nack
+  is returned as an error. The caller should retry; the message may or may not have been enqueued if the
+  connection drops before the confirm arrives, so consumers should tolerate duplicates.
 - Per-message TTL only takes effect when the message reaches the head of its queue, so an expired message
   stuck behind unexpired ones is not dropped or dead-lettered until it reaches the head.
 
