@@ -1,5 +1,20 @@
 # Changelog
 
+## 4.2.0 (2026-10-26)
+
+### Added
+
+- `ReconnectingProducer::with_backoff`, which takes a `backon::ExponentialBuilder` and bounds how a failed publish
+  is retried: the number of retries (`with_max_times`), the longest single delay (`with_max_delay`) and the total
+  time spent sleeping (`with_total_delay`).
+
+### Changed
+
+- `ReconnectingProducer::publish` no longer retries just once. It retries with an exponential backoff, by default
+  up to 4 times with a jittered 100 ms to 5 s delay and at most 30 s of sleeping in total. A failed reconnect now
+  counts as a failed attempt instead of ending the call. Broker rejections are still returned immediately.
+- New dependency: `backon`.
+
 ## 4.1.0 (2026-10-26)
 
 ### Added

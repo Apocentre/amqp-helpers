@@ -1,6 +1,6 @@
 [package]
 name = "amqp-helpers"
-version = "4.1.0"
+version = "4.2.0"
 edition = "2021"
 license = "MIT"
 description = "Thin helpers on top of lapin: RabbitMQ producer and consumers with a broker-side retry mechanism (dead-letter exchanges and TTLs)"
@@ -14,6 +14,7 @@ include = ["/src", "/examples", "/README.md", "/CHANGELOG.md", "/LICENSE", "/doc
 
 [dependencies]
 async-trait = "0.1.89"
+backon = "1.6.0"
 eyre = "0.6.12"
 bitcode = { version = "0.6.9", features = ["serde"] }
 serde = "1"
