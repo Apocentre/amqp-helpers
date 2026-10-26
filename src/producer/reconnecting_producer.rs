@@ -1,4 +1,5 @@
 use std::{collections::BTreeMap, sync::{Arc, PoisonError, RwLock}, time::Duration};
+use backon::{ExponentialBuilder, Retryable};
 use eyre::{Result, eyre};
 use lapin::{Error, types::{AMQPValue, ShortString}};
 use log::{debug, info, warn};
@@ -7,6 +8,15 @@ use super::retry_producer::{PublishRejected, RetryProducer};
 
 const DEFAULT_PUBLISH_TIMEOUT: Duration = Duration::from_secs(10);
 const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+
+fn default_backoff() -> ExponentialBuilder {
+  ExponentialBuilder::default()
+    .with_jitter()
+    .with_min_delay(Duration::from_millis(100))
+    .with_max_delay(Duration::from_secs(5))
+    .with_max_times(4)
+    .with_total_delay(Some(Duration::from_secs(30)))
+}
 
 type ErrorHandler = Arc<dyn Fn(Error) + Send + Sync>;
 type Headers = BTreeMap<ShortString, AMQPValue>;
@@ -22,13 +32,15 @@ struct Current {
 /// `publish` takes `&self` and never holds a lock while talking to the broker, so one instance can be shared
 /// (e.g. in an `Arc`) between tasks without any external locking. When a publish fails with anything other than
 /// a broker rejection ([`PublishRejected`]) or times out, the producer opens a new connection, re-declares the
-/// topology, and publishes the message once more. Concurrent failures share a single reconnect.
+/// topology, waits for an exponential backoff and publishes the message again, until the retries configured with
+/// [`Self::with_backoff`] are used up. Concurrent failures share a single reconnect.
 ///
 /// Delivery is therefore at-least-once: if the connection drops (or the publish times out) after the broker took
 /// the message but before the confirm arrived, the retry publishes a duplicate.
 pub struct ReconnectingProducer {
   config: Config,
   publish_timeout: Duration,
+  backoff: ExponentialBuilder,
   current: RwLock<Current>,
   // serializes reconnects; never held while publishing
   reconnect_lock: Mutex<()>,
@@ -98,6 +110,7 @@ impl ReconnectingProducer {
     Ok(Self {
       config,
       publish_timeout: DEFAULT_PUBLISH_TIMEOUT,
+      backoff: default_backoff(),
       current: RwLock::new(Current {generation: 0, producer}),
       reconnect_lock: Mutex::new(()),
     })
@@ -118,7 +131,21 @@ impl ReconnectingProducer {
     self
   }
 
-  /// Same as [`RetryProducer::publish`], but reconnects and retries once when the connection is the problem.
+  /// How failed publishes are retried: the delay between attempts, the number of retries (`with_max_times`) and the
+  /// total time spent sleeping between them (`with_total_delay`). Defaults to up to 4 retries after the first
+  /// attempt, with a jittered exponential delay from 100 milliseconds up to 5 seconds, and at most 30 seconds of
+  /// sleeping in total. Use `with_max_times(0)` to disable retrying.
+  ///
+  /// The total delay only counts the sleeps, not the attempts themselves, so a call can run longer by up to one
+  /// publish or connect timeout per attempt.
+  pub fn with_backoff(mut self, backoff: ExponentialBuilder) -> Self {
+    self.backoff = backoff;
+
+    self
+  }
+
+  /// Same as [`RetryProducer::publish`], but when the connection is the problem it reconnects, backs off and
+  /// publishes again, as configured by [`Self::with_backoff`]. A failed reconnect counts as a failed attempt.
   pub async fn publish(
     &self,
     routing_key: &str,
@@ -127,23 +154,37 @@ impl ReconnectingProducer {
     ttl: Option<u32>,
     headers: Option<Headers>,
   ) -> Result<()> {
+    (|| self.publish_or_reconnect(routing_key, payload, persistent, ttl, headers.clone()))
+      .retry(self.backoff)
+      // the connection is fine, so a new one would be rejected the same way
+      .when(|err| err.downcast_ref::<PublishRejected>().is_none())
+      .notify(|err, delay| warn!(
+        "Publishing to {} failed, retrying in {:?}: {:?}", self.config.exchange_name, delay, err,
+      ))
+      .await
+  }
+
+  // one attempt: publishes on the current connection and, if that fails because of the connection, replaces it
+  // so that the next attempt (after the backoff) has a fresh one
+  async fn publish_or_reconnect(
+    &self,
+    routing_key: &str,
+    payload: &[u8],
+    persistent: bool,
+    ttl: Option<u32>,
+    headers: Option<Headers>,
+  ) -> Result<()> {
     let (generation, producer) = self.current();
-    let err = match self.publish_once(&producer, routing_key, payload, persistent, ttl, headers.clone()).await {
+    let err = match self.publish_once(&producer, routing_key, payload, persistent, ttl, headers).await {
       Ok(()) => return Ok(()),
+      Err(err) if err.downcast_ref::<PublishRejected>().is_some() => return Err(err),
       Err(err) => err,
     };
 
-    // the connection is fine, so a new one would be rejected the same way
-    if err.downcast_ref::<PublishRejected>().is_some() {
-      return Err(err);
-    }
-
-    warn!("Publishing to {} failed, reconnecting: {:?}", self.config.exchange_name, err);
-
-    let producer = self.reconnect(generation).await
+    self.reconnect(generation).await
       .map_err(|reconnect_err| reconnect_err.wrap_err(format!("reconnecting after a failed publish ({err})")))?;
 
-    self.publish_once(&producer, routing_key, payload, persistent, ttl, headers).await
+    Err(err)
   }
 
   async fn publish_once(
@@ -279,6 +320,7 @@ mod tests {
     let broken_producer = ReconnectingProducer {
       config: broken,
       publish_timeout: producer.publish_timeout,
+      backoff: producer.backoff,
       current: RwLock::new(Current {generation: 0, producer: producer.current().1}),
       reconnect_lock: Mutex::new(()),
     };

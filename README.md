@@ -253,9 +253,24 @@ producer.publish("example.send", &payload, true, None, None).await?;
 can be shared between tasks with no extra locking. If a publish fails with anything other than a broker
 rejection (`PublishRejected`: nack or unroutable), or does not finish within the publish timeout (10 seconds by
 default), the producer opens a new connection, re-declares the topology, closes the old connection in the
-background, and publishes the message once more. Concurrent failures share a single reconnect. If reconnecting
-fails the error is returned and the next `publish` tries again. A broker rejection is returned without
-reconnecting because a new connection would be rejected the same way.
+background, waits for an exponential backoff, and publishes the message again. Concurrent failures share a
+single reconnect. A failed reconnect counts as a failed attempt. A broker rejection is returned without
+retrying because a new connection would be rejected the same way.
+
+Retrying is bounded by a [`backon`](https://docs.rs/backon) `ExponentialBuilder`. By default a publish is retried
+up to 4 times, with a jittered delay that starts at 100 milliseconds and is capped at 5 seconds, and at most 30
+seconds of sleeping in total. Change it with `with_backoff`; the last error is returned once a limit is hit:
+
+```rust
+let producer = producer.with_backoff(
+    ExponentialBuilder::default()
+        .with_jitter()
+        .with_min_delay(Duration::from_millis(200))
+        .with_max_delay(Duration::from_secs(10))
+        .with_max_times(6)                              // retries, not counting the first attempt
+        .with_total_delay(Some(Duration::from_secs(60))), // sleeping only, attempts are not counted
+);
+```
 
 Delivery is at-least-once: when the connection drops or the publish times out after the broker took the message
 but before the confirm arrived, the retry publishes a duplicate.
