@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
-use eyre::Result;
+use eyre::{Result, bail};
 use lapin::{
   BasicProperties, Channel, Error, ExchangeKind, Queue, options::{
-    BasicPublishOptions, ExchangeDeclareOptions, QueueBindOptions, QueueDeclareOptions
+    BasicPublishOptions, ConfirmSelectOptions, ExchangeDeclareOptions, QueueBindOptions, QueueDeclareOptions
   }, types::{AMQPValue, FieldTable, LongString, ShortString}
 };
 use crate::core::connection::Connection;
@@ -31,6 +31,10 @@ impl RetryProducer {
   {
     let connection = Connection::new(uri, on_connection_error).await;
     let channel = connection.create_channel().await;
+
+    // make the broker acknowledge every publish so `publish` can tell whether it took ownership of the message
+    channel.confirm_select(ConfirmSelectOptions::default()).await?;
+
     let retry_1_exchange_name = Self::get_retry_exchange_name(exchange_name, 1);
     let retry_2_exchange_name = Self::get_retry_exchange_name(exchange_name, 2);
     let wait_queue_name = format!("{}.wait_retry", queue_name);
@@ -123,15 +127,28 @@ impl RetryProducer {
       basic_props = basic_props.with_expiration(ttl.to_string().into());
     }
 
-    self.channel.basic_publish(
+    let confirmation = self.channel.basic_publish(
       exchange_name.into(),
       routing_key.into(),
-      BasicPublishOptions::default(),
+      // mandatory: the broker returns the message instead of silently dropping it when no queue is bound
+      BasicPublishOptions {mandatory: true, ..BasicPublishOptions::default()},
       payload,
       basic_props,
     )
     .await?
     .await?;
+
+    if confirmation.is_nack() {
+      bail!("broker nacked the message published to {exchange_name} with routing key {routing_key}");
+    }
+
+    if let Some(returned) = confirmation.take_message() {
+      bail!(
+        "message published to {exchange_name} with routing key {routing_key} is unroutable: {} {}",
+        returned.reply_code,
+        returned.reply_text,
+      );
+    }
 
     Ok(())
   }
