@@ -1,0 +1,3 @@
+flowchart LR
+    P([publish]) --> DX{{"E.delay_ex"}} --> DQ[("Q.entry_delay<br/>ttl = delay_ms")]
+    DQ -- "expired" --> E{{"E"}} --> Q[("Q")] --> C([Consumer])
