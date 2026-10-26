@@ -1,6 +1,6 @@
 [package]
 name = "amqp-helpers"
-version = "3.2.3"
+version = "3.2.4"
 edition = "2021"
 license = "MIT"
 description = "Thin helpers on top of lapin: RabbitMQ producer and consumers with a broker-side retry mechanism (dead-letter exchanges and TTLs)"
