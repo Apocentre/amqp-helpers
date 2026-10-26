@@ -3,8 +3,14 @@ name = "amqp-helpers"
 version = "3.2.3"
 edition = "2021"
 license = "BUSL-1.1"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+description = "Thin helpers on top of lapin: RabbitMQ producer and consumers with a broker-side retry mechanism (dead-letter exchanges and TTLs)"
+readme = "README.md"
+repository = "https://github.com/Apocentre/amqp-helpers"
+homepage = "https://github.com/Apocentre/amqp-helpers"
+documentation = "https://docs.rs/amqp-helpers"
+keywords = ["amqp", "rabbitmq", "lapin", "retry", "dead-letter"]
+categories = ["asynchronous", "network-programming"]
+include = ["/src", "/examples", "/README.md", "/LICENSE", "/docs/diagrams/*.png"]
 
 [dependencies]
 async-trait = "0.1.89"
@@ -14,9 +20,10 @@ serde = "1"
 futures-lite = "2.6.0"
 lapin = "4.1.0"
 log = "0.4.27"
-tokio = "1.45.1"
+tokio = { version = "1.45.1", features = ["rt"] }
 tokio-executor-trait = "2.1.3"
 tokio-reactor-trait = "2.0.0"
 
 [dev-dependencies]
-tokio = { version = "1.45.1", features = ["rt", "macros"] }
+serde = { version = "1", features = ["derive"] }
+tokio = { version = "1.45.1", features = ["rt", "rt-multi-thread", "macros", "time"] }
